@@ -143,12 +143,3 @@ class YouTubeAPI(object):
 
         for entry in feed.entry:
             yield YouTubeVideo.from_feed_entry(entry)
-
-
-if __name__ == '__main__':
-    yt = YouTubeAPI('AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvqenE2afoyjQB276fWVx1T3qpDi7FFO6tkVs7JqqTmRRA')
-    for item in yt.search('Annoying orange'):
-        print item, item.resolutions, item.get_video_url(), item.get_video_url('360p')
-        print item.thumbnail_url
-        print item.thumbnail_path
-        break
