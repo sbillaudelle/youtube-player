@@ -58,7 +58,10 @@ class YouTubeVideo(object):
 
     @property
     def thumbnail_url(self):
-        return self._video_info['thumbnail_url'][0]
+        try:
+            return self._video_info['thumbnail_url'][0]
+        except KeyError:
+            return None
 
     @cached_property
     def thumbnail_path(self):
