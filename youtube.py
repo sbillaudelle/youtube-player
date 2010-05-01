@@ -18,7 +18,7 @@ RESOLUTIONS = {
 
 # Ordering options
 RELEVANCE = 'relevance'
-VIEW_COUNTT = 'viewCount'
+VIEW_COUNT = 'viewCount'
 PUBLISHED = 'published'
 RATING = 'rating'
 
