@@ -3,6 +3,7 @@ import gst
 
 gtk.gdk.threads_init()
 
+
 class Foo:
 
     def __init__(self):
