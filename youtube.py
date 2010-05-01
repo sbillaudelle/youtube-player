@@ -57,20 +57,8 @@ class YouTubeVideo(object):
         )
 
     @property
-    def thumbnail_url(self):
-        try:
-            return self._video_info['thumbnail_url'][0]
-        except KeyError:
-            return None
-
-    @cached_property
-    def thumbnail_path(self):
-        import os
-        from tempfile import mkstemp
-        file_fd, file_name = mkstemp()
-        with open(file_name, 'w') as temp_file:
-            temp_file.write(urllib.urlopen(self.thumbnail_url).read())
-        return file_name
+    def creator(self):
+        return self._video_info['creator']
 
     @cached_property
     def resolutions(self):
@@ -117,6 +105,24 @@ class YouTubeVideo(object):
             video_id=self.video_id,
             resolution_code=resolution_code
         )
+
+    @property
+    def thumbnail_url(self):
+        try:
+            return self._video_info['thumbnail_url'][0]
+        except KeyError:
+            return None
+
+    @cached_property
+    def thumbnail_path(self):
+        if self.thumbnail_url is None:
+            return None
+        import os
+        from tempfile import mkstemp
+        file_fd, file_name = mkstemp()
+        with open(file_name, 'w') as temp_file:
+            temp_file.write(urllib.urlopen(self.thumbnail_url).read())
+        return file_name
 
 
 class YouTubeAPI(object):
