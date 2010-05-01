@@ -1,5 +1,6 @@
 import re
 import urllib
+import urlparse
 import gdata.youtube
 import gdata.youtube.service
 from cream.util import cached_property
@@ -17,10 +18,10 @@ RESOLUTIONS = {
 }
 
 # Ordering options
-RELEVANCE = 'relevance'
+RELEVANCE  = 'relevance'
 VIEW_COUNT = 'viewCount'
-PUBLISHED = 'published'
-RATING = 'rating'
+PUBLISHED  = 'published'
+RATING     = 'rating'
 
 
 class YouTubeVideo(object):
@@ -45,22 +46,28 @@ class YouTubeVideo(object):
             uri         = feed_entry.media.player.url,
             duration    = feed_entry.media.duration.seconds,
             view_count  = feed_entry.statistics.view_count,
-            rating      = feed_entry.rating.average,
+            rating      = feed_entry.rating and feed_entry.rating.average,
             video_id    = feed_entry.id.text.split('/')[-1]
         )
 
     @cached_property
-    def video_token(self):
-        """
-        Returns a token for this video.
-        This method sends a HTTP request to the YouTube servers.
-        """
-        content = urllib.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
-        video_token = re.search('&token=([^&]+)', content)
-        if not video_token:
-            raise IOError("Video %s: Could not get_video_info" % self.video_id)
-        return video_token.group(1).replace('%3D', '=')
+    def _video_info(self):
+        return urlparse.parse_qs(
+            urllib.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
+        )
 
+    @property
+    def thumbnail_url(self):
+        return self._video_info['thumbnail_url'][0]
+
+    @cached_property
+    def thumbnail_path(self):
+        import os
+        from tempfile import mkstemp
+        file_fd, file_name = mkstemp()
+        with open(file_name, 'w') as temp_file:
+            temp_file.write(urllib.urlopen(self.thumbnail_url).read())
+        return file_name
 
     @cached_property
     def resolutions(self):
@@ -79,6 +86,8 @@ class YouTubeVideo(object):
         Finds all resolutions in which this video is available.
         This method sends 3 HTTP requests to the YouTube servers.
         """
+        # TODO: List of available resolutions/stream urls can be extracted
+        # from ``self._video_info``, so no extra HTTP requests needed here.
         for resolution, resolution_code in RESOLUTIONS.iteritems():
             urlhandle = urllib.urlopen(self.get_video_url(resolution))
             if urlhandle.getcode() == HTTP_FOUND:
@@ -93,14 +102,15 @@ class YouTubeVideo(object):
         Returns the video stream URL of this video with the given `resolution`.
 
         If no `resolution` is given, the highest available resolution will be
-        chosen from the ``resolutions`` attribute.
+        chosen from the ``r
+        esolutions`` attribute.
         """
         if resolution is None:
             resolution = self.resolutions[0]
         resolution_code = RESOLUTIONS[resolution]
 
         return GET_VIDEO_URL.format(
-            token=self.video_token,
+            token=self._video_info['token'],
             video_id=self.video_id,
             resolution_code=resolution_code
         )
@@ -130,3 +140,6 @@ if __name__ == '__main__':
     yt = YouTubeAPI('AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvqenE2afoyjQB276fWVx1T3qpDi7FFO6tkVs7JqqTmRRA')
     for item in yt.search('Annoying orange'):
         print item, item.resolutions, item.get_video_url(), item.get_video_url('360p')
+        print item.thumbnail_url
+        print item.thumbnail_path
+        break
