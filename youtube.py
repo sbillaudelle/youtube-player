@@ -24,6 +24,7 @@ RATING = 'rating'
 
 
 class YouTubeVideo(object):
+    """ Represents a YouTube video. """
 
     def __init__(self, **attributes):
         for key, value in attributes.iteritems():
@@ -33,7 +34,8 @@ class YouTubeVideo(object):
         return '<YouTubeVideo id={0}>'.format(self.video_id)
 
     @classmethod
-    def from_feed(cls, feed_entry):
+    def from_feed_entry(cls, feed_entry):
+        """ Creates a new instance from a ``gdata.youtube.YouTubeVideoEntry``. """
         return cls(
             title       = feed_entry.media.title.text,
             published   = feed_entry.published.text,
@@ -49,6 +51,10 @@ class YouTubeVideo(object):
 
     @cached_property
     def video_token(self):
+        """
+        Returns a token for this video.
+        This method sends a HTTP request to the YouTube servers.
+        """
         content = urllib.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
         video_token = re.search('&token=([^&]+)', content)
         if not video_token:
@@ -58,9 +64,21 @@ class YouTubeVideo(object):
 
     @cached_property
     def resolutions(self):
+        """
+        Tuple with all resolutions available for this video.
+        Possible resolutions are::
+
+            '360p', '720p', '1080p'
+
+        (``cached_property`` that gets its value from ``find_resolutions``.)
+        """
         return tuple(sorted(self.find_resolutions(), reverse=True))
 
     def find_resolutions(self):
+        """
+        Finds all resolutions in which this video is available.
+        This method sends 3 HTTP requests to the YouTube servers.
+        """
         for resolution, resolution_code in RESOLUTIONS.iteritems():
             urlhandle = urllib.urlopen(self.get_video_url(resolution))
             if urlhandle.getcode() == HTTP_FOUND:
@@ -71,6 +89,12 @@ class YouTubeVideo(object):
         return self.get_video_url()
 
     def get_video_url(self, resolution=None):
+        """
+        Returns the video stream URL of this video with the given `resolution`.
+
+        If no `resolution` is given, the highest available resolution will be
+        chosen from the ``resolutions`` attribute.
+        """
         if resolution is None:
             resolution = self.resolutions[0]
         resolution_code = RESOLUTIONS[resolution]
@@ -99,7 +123,7 @@ class YouTubeAPI(object):
         feed = self.service.YouTubeQuery(query)
 
         for entry in feed.entry:
-            yield YouTubeVideo.from_feed(entry)
+            yield YouTubeVideo.from_feed_entry(entry)
 
 
 if __name__ == '__main__':
