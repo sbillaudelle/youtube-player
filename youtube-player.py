@@ -60,6 +60,8 @@ class YouTubePlayer(cream.Module):
         self.cellrenderer_thumbnail = self.interface.get_object('cellrenderer_thumbnail')
 
         self.fullscreen_window.fullscreen()
+        self.video_area.set_app_paintable(True)
+        self.fullscreen_video_area.set_app_paintable(True)
 
         self.video_area.connect('expose-event', self.expose_cb)
         self.fullscreen_video_area.connect('expose-event', self.expose_cb)
@@ -133,11 +135,36 @@ class YouTubePlayer(cream.Module):
 
 
     def expose_cb(self, source, event):
+        self.draw()
 
-        ctx = source.window.cairo_create()
+
+    def draw(self):
+
+        if self.fullscreen:
+            video_area = self.fullscreen_video_area
+        else:
+            video_area = self.video_area
+
+        width = video_area.get_allocation().width
+        height = video_area.get_allocation().height
+
+        if self.fullscreen:
+            ctx = video_area.window.cairo_create()
+        else:
+            ctx = video_area.window.cairo_create()
 
         ctx.set_source_rgb(0, 0, 0)
         ctx.paint()
+
+        if self.state == STATE_NULL:
+            logo_width = logo_height = min(.4 * width, .4 * height)
+    
+            logo_x = (width - logo_width) / 2.0
+            logo_y = (height - logo_height) / 2.0
+    
+            pb = gtk.gdk.pixbuf_new_from_file_at_size('youtube-player.svg', logo_width, logo_height)
+            ctx.set_source_pixbuf(pb, logo_x, logo_y)
+            ctx.paint()
 
 
     def search_cb(self, source):
@@ -194,7 +221,7 @@ class YouTubePlayer(cream.Module):
             self.videos[video.video_id] = video
 
             info = "<b>{0}</b>\n{1}\n{2}".format(video.title, video.description, convert_ns(int(video.duration) * 1000000000))
-            pb = gtk.gdk.pixbuf_new_from_file('/home/stein/logo.svg').scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+            pb = gtk.gdk.pixbuf_new_from_file('youtube-player.svg').scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
             gtk.gdk.threads_enter()
             self.liststore.append((
@@ -206,7 +233,7 @@ class YouTubePlayer(cream.Module):
 
         for c, row in enumerate(self.liststore):
             video = self.videos[row[0]]
-            pb = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or '/home/stein/logo.svg').scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+            pb = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or 'youtube-player.svg').scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
             row[2] = pb
 
 
@@ -236,6 +263,8 @@ class YouTubePlayer(cream.Module):
         self.player.set_state(gst.STATE_PLAYING)
         self.state = STATE_PLAYING
 
+        self.draw()
+
         self.play_pause_image.set_from_icon_name('media-playback-pause', gtk.ICON_SIZE_BUTTON)
 
 
@@ -244,6 +273,8 @@ class YouTubePlayer(cream.Module):
         self.player.set_state(gst.STATE_PAUSED)
         self.state = STATE_PAUSED
 
+        self.draw()
+
         self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
 
 
@@ -251,6 +282,8 @@ class YouTubePlayer(cream.Module):
 
         self.player.set_state(gst.STATE_NULL)
         self.state = STATE_NULL
+
+        self.draw()
 
         self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
 
