@@ -258,10 +258,8 @@ class YouTubePlayer(cream.Module):
         else:
             percentage = 0
 
-        #gtk.gdk.threads_enter()
         self.position_display.set_text("{0}/{1}".format(position, duration))
         self.progress.set_value(percentage)
-        #gtk.gdk.threads_leave()
 
 
     def play(self):
@@ -315,6 +313,7 @@ class YouTubePlayer(cream.Module):
 
         if t == gst.MESSAGE_EOS:
             self.player.set_state(gst.STATE_NULL)
+            self.update_position(0, 0)
         elif t == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
             print "Error: %s" % err, debug
