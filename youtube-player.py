@@ -1,5 +1,6 @@
 import thread
 
+import gobject
 import gtk
 import gst
 
@@ -19,6 +20,7 @@ class YouTubePlayer(cream.Module):
 
     state = STATE_NULL
     _current_video_id = None
+    fullscreen = False
 
     def __init__(self):
 
@@ -29,20 +31,30 @@ class YouTubePlayer(cream.Module):
         self.interface.add_from_file('interface.ui')
 
         self.window = self.interface.get_object('window')
+        self.fullscreen_window = self.interface.get_object('fullscreen_window')
         self.video_area = self.interface.get_object('video_area')
+        self.fullscreen_video_area = self.interface.get_object('fullscreen_video_area')
         self.search_entry = self.interface.get_object('search_entry')
         self.play_pause_button = self.interface.get_object('play_pause_button')
         self.play_pause_image = self.interface.get_object('play_pause_image')
         self.resolution_chooser = self.interface.get_object('resolution_chooser')
         self.resolutions_store = self.interface.get_object('resolutions_store')
+        self.position_display = self.interface.get_object('position_display')
+        self.progress = self.interface.get_object('progress')
         self.liststore = self.interface.get_object('liststore')
         self.treeview = self.interface.get_object('treeview')
 
+        self.fullscreen_window.fullscreen()
+
         self.video_area.connect('expose-event', self.expose_cb)
+        self.fullscreen_video_area.connect('expose-event', self.expose_cb)
         self.search_entry.connect('activate', self.search_cb)
         self.play_pause_button.connect('clicked', self.play_pause_cb)
         self.resolution_chooser.connect('changed', self.resolution_changed_cb)
         self.treeview.connect('row-activated', self.row_activated_cb)
+        self.window.connect('destroy', lambda *args: self.quit())
+        self.video_area.connect('button-press-event', self.video_area_click_cb)
+        self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
 
         # Prefill the resolution combo box:
         for index, resolution in enumerate(RESOLUTIONS.iterkeys()):
@@ -58,6 +70,8 @@ class YouTubePlayer(cream.Module):
         self.player = gst.Pipeline("player")
 
         self.playbin = gst.element_factory_make("playbin", "playbin")
+        self.video_sink = gst.element_factory_make("ximagesink", "vsink")
+        self.playbin.set_property('video-sink', self.video_sink)
         self.player.add(self.playbin)
 
         bus = self.player.get_bus()
@@ -70,10 +84,33 @@ class YouTubePlayer(cream.Module):
 
         self.window.show_all()
 
+        gobject.timeout_add(1000, self.update)
+
+
+    def video_area_click_cb(self, source, event):
+
+        if event.type == gtk.gdk._2BUTTON_PRESS:
+            self.toggle_fullscreen()
+
+
+    def toggle_fullscreen(self):
+
+        if not self.fullscreen:
+            self.fullscreen_window.show_all()
+            if self.fullscreen_window.window:
+                self.video_sink.set_xwindow_id(self.fullscreen_video_area.window.xid)
+            else:
+                self.fullscreen_window.connect('map', lambda *args: self.video_sink.set_xwindow_id(self.fullscreen_video_area.window.xid))
+            self.fullscreen = True
+        else:
+            self.fullscreen_window.hide()
+            self.video_sink.set_xwindow_id(self.video_area.window.xid)
+            self.fullscreen = False
+
 
     def expose_cb(self, source, event):
 
-        ctx = self.video_area.window.cairo_create()
+        ctx = source.window.cairo_create()
 
         ctx.set_source_rgb(0, 0, 0)
         ctx.paint()
@@ -129,15 +166,55 @@ class YouTubePlayer(cream.Module):
 
         res = self.youtube.search(search_string)
 
-        gtk.gdk.threads_enter()
         for video in res:
             self.videos[video.video_id] = video
+
+            info = "<b>{0}</b>\n{1}".format(video.title, video.description)
+            pb = gtk.gdk.pixbuf_new_from_file('/home/jonas/dev/cream/linuxtag2010/logo.svg').scale_simple(32, 32, gtk.gdk.INTERP_HYPER)
+
+            gtk.gdk.threads_enter()
             self.liststore.append((
                 video.video_id,
-                video.title,
-                gtk.gdk.pixbuf_new_from_file('/home/jonas/dev/cream/linuxtag2010/logo.svg').scale_simple(24, 24, gtk.gdk.INTERP_HYPER)
-            ))
-        gtk.gdk.threads_leave()
+                info,
+                pb
+                ))
+            gtk.gdk.threads_leave()
+
+        for c, row in enumerate(self.liststore):
+            video = self.videos[row[0]]
+            pb = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or '/home/jonas/dev/cream/linuxtag2010/logo.svg').scale_simple(32, 32, gtk.gdk.INTERP_HYPER)
+            row[2] = pb
+
+
+    def update(self):
+
+        def convert_ns(t):
+            s,ns = divmod(t, 1000000000)
+            m,s = divmod(s, 60)
+
+            if m < 60:
+                return "%02i:%02i" %(m,s)
+            else:
+                h,m = divmod(m, 60)
+                return "%i:%02i:%02i" %(h,m,s)
+
+        try:
+            duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
+            position_ns = self.player.query_position(gst.FORMAT_TIME, None)[0]
+
+            duration = convert_ns(duration_ns)
+            position = convert_ns(position_ns)
+
+            percentage = (float(position_ns) / float(duration_ns)) * 100.0
+
+            gtk.gdk.threads_enter()
+            self.position_display.set_text("{0}/{1}".format(position, duration))
+            self.progress.set_value(percentage)
+            gtk.gdk.threads_leave()
+        except:
+            pass
+
+        return True
 
 
     def play(self):
@@ -182,6 +259,12 @@ class YouTubePlayer(cream.Module):
             err, debug = message.parse_error()
             print "Error: %s" % err, debug
             self.player.set_state(gst.STATE_NULL)
+        elif t == gst.MESSAGE_BUFFERING:
+            state = message.parse_buffering()
+            if state < 100:
+                self.pause()
+            else:
+                self.play()
 
 
     def on_sync_message(self, bus, message):
