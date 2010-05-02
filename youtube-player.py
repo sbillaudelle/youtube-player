@@ -178,9 +178,7 @@ class YouTubePlayer(cream.Module):
         selection = self.treeview.get_selection()
         model, iter = selection.get_selected()
         id = model.get_value(iter, 0)
-        self.load_video(id)
-
-        self.play()
+        thread.start_new_thread(self.load_video, (id,))
 
 
     def play_pause_cb(self, source):
@@ -189,9 +187,7 @@ class YouTubePlayer(cream.Module):
             selection = self.treeview.get_selection()
             model, iter = selection.get_selected()
             id = model.get_value(iter, 0)
-            self.load_video(id)
-
-            self.play()
+            thread.start_new_thread(self.load_video, (id,))
         elif self.state == STATE_PAUSED:
             self.play()
         else:
@@ -204,7 +200,7 @@ class YouTubePlayer(cream.Module):
             # User changed the quality while playing a video -- replay currently
             # played video with the selected quality.
             # TODO: Remember the seek here and re-seek to that point.
-            self.load_video(self._current_video_id)
+            thread.start_new_thread(self.load_video, (self._current_video_id,))
 
 
     def search(self, search_string):
@@ -243,19 +239,29 @@ class YouTubePlayer(cream.Module):
             duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
             position_ns = self.player.query_position(gst.FORMAT_TIME, None)[0]
 
-            duration = convert_ns(duration_ns)
-            position = convert_ns(position_ns)
-
-            percentage = (float(position_ns) / float(duration_ns)) * 100.0
-
             gtk.gdk.threads_enter()
-            self.position_display.set_text("{0}/{1}".format(position, duration))
-            self.progress.set_value(percentage)
+            self.update_position(duration_ns, position_ns)
             gtk.gdk.threads_leave()
         except:
             pass
 
         return True
+
+
+    def update_position(self, duration_ns, position_ns):
+
+        duration = convert_ns(duration_ns)
+        position = convert_ns(position_ns)
+
+        if duration_ns != 0:
+            percentage = (float(position_ns) / float(duration_ns)) * 100.0
+        else:
+            percentage = 0
+
+        #gtk.gdk.threads_enter()
+        self.position_display.set_text("{0}/{1}".format(position, duration))
+        self.progress.set_value(percentage)
+        #gtk.gdk.threads_leave()
 
 
     def play(self):
@@ -276,14 +282,20 @@ class YouTubePlayer(cream.Module):
         self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
 
 
-    def load_video(self, id):
+    def load_video(self, id, play=True):
 
         self.player.set_state(gst.STATE_NULL)
         self.state = STATE_NULL
 
+        gtk.gdk.threads_enter()
+        self.update_position(0, 0)
+        gtk.gdk.threads_leave()
+
         self.draw()
 
+        gtk.gdk.threads_enter()
         self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+        gtk.gdk.threads_leave()
 
         video = self.videos[id]
         video_url = video.get_video_url(
@@ -292,6 +304,9 @@ class YouTubePlayer(cream.Module):
         )
         self.playbin.set_property('uri', video_url)
         self._current_video_id = id
+
+        if play:
+            self.play()
 
 
     def on_message(self, bus, message):
