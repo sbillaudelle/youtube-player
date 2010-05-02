@@ -273,8 +273,6 @@ class YouTubePlayer(cream.Module):
         self.player.set_state(gst.STATE_PAUSED)
         self.state = STATE_PAUSED
 
-        self.draw()
-
         self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
 
 
