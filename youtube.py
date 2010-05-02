@@ -3,8 +3,7 @@ import urllib
 import urlparse
 import gdata.youtube
 import gdata.youtube.service
-from cream.util import cached_property
-from cream.util.dicts import ordereddict
+from utils import cached_property, ordereddict
 
 
 HTTP_FOUND = 200

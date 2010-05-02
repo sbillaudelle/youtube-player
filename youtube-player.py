@@ -5,8 +5,6 @@ import gobject
 import gtk
 import gst
 
-import cream
-
 from youtube import YouTubeAPI, RESOLUTIONS
 from throbber import Throbber
 
@@ -32,15 +30,14 @@ def convert_ns(t):
         return "%i:%02i:%02i" %(h,m,s)
 
 
-class YouTubePlayer(cream.Module):
+class YouTubePlayer(object):
 
     state = STATE_NULL
-    _current_video_id = None
     fullscreen = False
+    preferred_resolution = '1080p'
+    _current_video_id = None
 
     def __init__(self):
-
-        cream.Module.__init__(self)
 
         # Build GTK+ interface:
         self.interface = gtk.Builder()
@@ -84,7 +81,7 @@ class YouTubePlayer(cream.Module):
         # Prefill the resolution combo box:
         for index, resolution in enumerate(RESOLUTIONS.iterkeys()):
             self.resolutions_store.append((resolution,))
-            if resolution == self.config.preferred_resolution:
+            if resolution == self.preferred_resolution:
                 self.resolution_chooser.set_active(index)
 
 
@@ -163,10 +160,10 @@ class YouTubePlayer(cream.Module):
 
         if self.state == STATE_NULL:
             logo_width = logo_height = min(.4 * width, .4 * height)
-    
+
             logo_x = (width - logo_width) / 2.0
             logo_y = (height - logo_height) / 2.0
-    
+
             pb = gtk.gdk.pixbuf_new_from_file_at_size('youtube-player.svg', logo_width, logo_height)
             ctx.set_source_pixbuf(pb, logo_x, logo_y)
             ctx.paint()
@@ -199,7 +196,7 @@ class YouTubePlayer(cream.Module):
             self.set_state(STATE_PAUSED)
 
     def resolution_changed_cb(self, resolution_combobox):
-        self.config.preferred_resolution = self.resolutions_store.get_value(
+        self.preferred_resolution = self.resolutions_store.get_value(
                 resolution_combobox.get_active_iter(), 0)
         if self._current_video_id:
             # User changed the quality while playing a video -- replay currently
@@ -311,7 +308,7 @@ class YouTubePlayer(cream.Module):
 
         video = self.videos[id]
         video_url = video.get_video_url(
-            resolution=self.config.preferred_resolution,
+            resolution=self.preferred_resolution,
             fallback_to_lower_resolution=True
         )
         self.playbin.set_property('uri', video_url)
@@ -360,6 +357,14 @@ class YouTubePlayer(cream.Module):
             imagesink.set_xwindow_id(self.video_area.window.xid)
 
             gtk.gdk.threads_leave()
+
+
+    def main(self):
+        self._mainloop = gobject.MainLoop()
+        self._mainloop.run()
+
+    def quit(self):
+        self._mainloop.quit()
 
 
 if __name__ == '__main__':
