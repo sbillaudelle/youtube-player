@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import thread
 
 import gobject
@@ -99,8 +100,6 @@ class YouTubePlayer(cream.Module):
         self.playbin.set_property('buffer-duration', 3000000000)
         self.playbin.set_property('buffer-size', 2000000000)
         self.player.add(self.playbin)
-
-        self.playbin.set_property('flags', 255)
 
         bus = self.player.get_bus()
         bus.add_signal_watch()
