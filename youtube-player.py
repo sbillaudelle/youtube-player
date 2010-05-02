@@ -14,6 +14,7 @@ gtk.gdk.threads_init()
 
 YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvqenE2afoyjQB276fWVx1T3qpDi7FFO6tkVs7JqqTmRRA'
 
+PLAYER_LOGO = 'youtube-player.svg'
 ICON_SIZE = 64
 
 STATE_NULL = 0
@@ -21,9 +22,10 @@ STATE_PAUSED = 1
 STATE_PLAYING = 2
 STATE_BUFFERING = 3
 
+
 def convert_ns(t):
-    s,ns = divmod(t, 1000000000)
-    m,s = divmod(s, 60)
+    s, ns = divmod(t, 1000000000)
+    m, s = divmod(s, 60)
 
     if m < 60:
         return "%02i:%02i" %(m,s)
@@ -35,8 +37,8 @@ def convert_ns(t):
 class YouTubePlayer(cream.Module):
 
     state = STATE_NULL
-    _current_video_id = None
     fullscreen = False
+    _current_video_id = None
 
     def __init__(self):
 
@@ -46,22 +48,12 @@ class YouTubePlayer(cream.Module):
         self.interface = gtk.Builder()
         self.interface.add_from_file('interface.ui')
 
-        self.window = self.interface.get_object('window')
-        self.fullscreen_window = self.interface.get_object('fullscreen_window')
-        self.video_area = self.interface.get_object('video_area')
-        self.control_area = self.interface.get_object('control_area')
-        self.fullscreen_video_area = self.interface.get_object('fullscreen_video_area')
-        self.search_entry = self.interface.get_object('search_entry')
-        self.play_pause_button = self.interface.get_object('play_pause_button')
-        self.play_pause_image = self.interface.get_object('play_pause_image')
-        self.resolution_chooser = self.interface.get_object('resolution_chooser')
-        self.resolutions_store = self.interface.get_object('resolutions_store')
-        self.position_display = self.interface.get_object('position_display')
-        self.progress = self.interface.get_object('progress')
-        self.liststore = self.interface.get_object('liststore')
-        self.treeview = self.interface.get_object('treeview')
-        self.cellrenderer_info = self.interface.get_object('cellrenderer_info')
-        self.cellrenderer_thumbnail = self.interface.get_object('cellrenderer_thumbnail')
+        for obj in ('window', 'fullscreen_window', 'video_area', 'control_area',
+                    'fullscreen_video_area', 'search_entry', 'play_pause_button',
+                    'play_pause_image', 'resolution_chooser', 'resolutions_store',
+                    'position_display', 'progress', 'liststore', 'treeview',
+                    'cellrenderer_info', 'cellrenderer_thumbnail'):
+            setattr(self, obj, self.interface.get_object(obj))
 
         self.throbber = Throbber()
 
@@ -111,8 +103,7 @@ class YouTubePlayer(cream.Module):
 
         self.window.show_all()
 
-        gobject.timeout_add(1000, self.update)
-
+        gobject.timeout_add(1000, self.update_progressbar)
 
     def treeview_size_allocate_cb(self, source, allocation):
         self.cellrenderer_info.set_property('width', allocation.width - ICON_SIZE - 8)
@@ -163,12 +154,12 @@ class YouTubePlayer(cream.Module):
 
         if self.state == STATE_NULL:
             logo_width = logo_height = min(.4 * width, .4 * height)
-    
+
             logo_x = (width - logo_width) / 2.0
             logo_y = (height - logo_height) / 2.0
-    
-            pb = gtk.gdk.pixbuf_new_from_file_at_size('youtube-player.svg', logo_width, logo_height)
-            ctx.set_source_pixbuf(pb, logo_x, logo_y)
+
+            thumbnail = gtk.gdk.pixbuf_new_from_file_at_size(PLAYER_LOGO, logo_width, logo_height)
+            ctx.set_source_pixbuf(thumbnail, logo_x, logo_y)
             ctx.paint()
 
 
@@ -216,39 +207,40 @@ class YouTubePlayer(cream.Module):
 
     def _search(self, search_string):
 
-        res = self.youtube.search(search_string)
+        search_result = self.youtube.search(search_string)
 
-        for video in res:
+        for video in search_result:
             self.videos[video.video_id] = video
 
             info = "<b>{0}</b>\n{1}\n{2}".format(video.title, video.description, convert_ns(int(video.duration) * 1000000000))
-            pb = gtk.gdk.pixbuf_new_from_file('youtube-player.svg').scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+            thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
             gtk.gdk.threads_enter()
             self.liststore.append((
                 video.video_id,
                 info,
-                pb
-                ))
+                thumbnail
+            ))
             gtk.gdk.threads_leave()
 
-        for c, row in enumerate(self.liststore):
+        for column, row in enumerate(self.liststore):
             video = self.videos[row[0]]
-            pb = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or 'youtube-player.svg').scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
-            row[2] = pb
+            video_thumbnail = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or PLAYER_LOGO)
+            row[2] = video_thumbnail.scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
 
-    def update(self):
+    def update_progressbar(self):
 
         try:
             duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
             position_ns = self.player.query_position(gst.FORMAT_TIME, None)[0]
+        except gst.QueryError:
+            # Query failed; currently no video playing
+            return True
 
-            gtk.gdk.threads_enter()
-            self.update_position(duration_ns, position_ns)
-            gtk.gdk.threads_leave()
-        except:
-            pass
+        gtk.gdk.threads_enter()
+        self.update_position(duration_ns, position_ns)
+        gtk.gdk.threads_leave()
 
         return True
 
@@ -283,17 +275,18 @@ class YouTubePlayer(cream.Module):
 
             self.draw()
             self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+
         elif state == STATE_PAUSED:
             self.player.set_state(gst.STATE_PAUSED)
             self.state = STATE_PAUSED
-
             self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+
         elif state == STATE_PLAYING:
             self.player.set_state(gst.STATE_PLAYING)
             self.state = STATE_PLAYING
-
             self.draw()
             self.play_pause_image.set_from_icon_name('media-playback-pause', gtk.ICON_SIZE_BUTTON)
+
         elif state == STATE_BUFFERING:
             self.player.set_state(gst.STATE_PAUSED)
             self.state = STATE_BUFFERING
@@ -323,18 +316,18 @@ class YouTubePlayer(cream.Module):
 
     def on_message(self, bus, message):
 
-        t = message.type
+        type = message.type
 
-        if t == gst.MESSAGE_EOS:
+        if type == gst.MESSAGE_EOS:
             self.player.set_state(gst.STATE_NULL)
             self.state = STATE_NULL
             self.draw()
             self.update_position(0, 0)
-        elif t == gst.MESSAGE_ERROR:
+        elif type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
             print "Error: %s" % err, debug
             self.player.set_state(gst.STATE_NULL)
-        elif t == gst.MESSAGE_BUFFERING:
+        elif type == gst.MESSAGE_BUFFERING:
             state = message.parse_buffering()
             self.throbber.set_progress(state / 100.0)
             if state < 100:
