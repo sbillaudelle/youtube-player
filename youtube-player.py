@@ -95,8 +95,6 @@ class YouTubePlayer(cream.Module):
         self.playbin.set_property('buffer-size', 2000000000)
         self.player.add(self.playbin)
 
-        self.playbin.set_property('flags', 255)
-
         bus = self.player.get_bus()
         bus.add_signal_watch()
         bus.enable_sync_message_emission()
