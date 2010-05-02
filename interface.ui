@@ -42,6 +42,8 @@
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="invisible_char">&#x25CF;</property>
+                    <property name="primary_icon_stock">gtk-find</property>
+                    <property name="primary_icon_sensitive">True</property>
                   </object>
                   <packing>
                     <property name="expand">False</property>
@@ -67,7 +69,7 @@
                           <object class="GtkTreeViewColumn" id="treeviewcolumn1">
                             <property name="title">column</property>
                             <child>
-                              <object class="GtkCellRendererPixbuf" id="thumbnail_cell"/>
+                              <object class="GtkCellRendererPixbuf" id="cellrenderer_thumbnail"/>
                               <attributes>
                                 <attribute name="pixbuf">2</attribute>
                               </attributes>
@@ -78,7 +80,10 @@
                           <object class="GtkTreeViewColumn" id="treeviewcolumn2">
                             <property name="title">column</property>
                             <child>
-                              <object class="GtkCellRendererText" id="info"/>
+                              <object class="GtkCellRendererText" id="cellrenderer_info">
+                                <property name="height">58</property>
+                                <property name="ellipsize">end</property>
+                              </object>
                               <attributes>
                                 <attribute name="markup">1</attribute>
                               </attributes>

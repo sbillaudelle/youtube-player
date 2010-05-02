@@ -12,9 +12,22 @@ gtk.gdk.threads_init()
 
 YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvqenE2afoyjQB276fWVx1T3qpDi7FFO6tkVs7JqqTmRRA'
 
+ICON_SIZE = 64
+
 STATE_NULL = 0
 STATE_PAUSED = 1
 STATE_PLAYING = 2
+
+def convert_ns(t):
+    s,ns = divmod(t, 1000000000)
+    m,s = divmod(s, 60)
+
+    if m < 60:
+        return "%02i:%02i" %(m,s)
+    else:
+        h,m = divmod(m, 60)
+        return "%i:%02i:%02i" %(h,m,s)
+
 
 class YouTubePlayer(cream.Module):
 
@@ -43,6 +56,8 @@ class YouTubePlayer(cream.Module):
         self.progress = self.interface.get_object('progress')
         self.liststore = self.interface.get_object('liststore')
         self.treeview = self.interface.get_object('treeview')
+        self.cellrenderer_info = self.interface.get_object('cellrenderer_info')
+        self.cellrenderer_thumbnail = self.interface.get_object('cellrenderer_thumbnail')
 
         self.fullscreen_window.fullscreen()
 
@@ -52,6 +67,7 @@ class YouTubePlayer(cream.Module):
         self.play_pause_button.connect('clicked', self.play_pause_cb)
         self.resolution_chooser.connect('changed', self.resolution_changed_cb)
         self.treeview.connect('row-activated', self.row_activated_cb)
+        self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
         self.window.connect('destroy', lambda *args: self.quit())
         self.video_area.connect('button-press-event', self.video_area_click_cb)
         self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
@@ -69,9 +85,11 @@ class YouTubePlayer(cream.Module):
         # Initialize GStreamer stuff:
         self.player = gst.Pipeline("player")
 
-        self.playbin = gst.element_factory_make("playbin", "playbin")
-        self.video_sink = gst.element_factory_make("ximagesink", "vsink")
+        self.playbin = gst.element_factory_make("playbin2", "playbin")
+        self.video_sink = gst.element_factory_make("xvimagesink", "vsink")
         self.playbin.set_property('video-sink', self.video_sink)
+        self.playbin.set_property('buffer-duration', 10000000000)
+        self.playbin.set_property('buffer-size', 1000000000)
         self.player.add(self.playbin)
 
         bus = self.player.get_bus()
@@ -85,6 +103,10 @@ class YouTubePlayer(cream.Module):
         self.window.show_all()
 
         gobject.timeout_add(1000, self.update)
+
+
+    def treeview_size_allocate_cb(self, source, allocation):
+        self.cellrenderer_info.set_property('width', allocation.width - ICON_SIZE - 8)
 
 
     def video_area_click_cb(self, source, event):
@@ -169,8 +191,8 @@ class YouTubePlayer(cream.Module):
         for video in res:
             self.videos[video.video_id] = video
 
-            info = "<b>{0}</b>\n{1}".format(video.title, video.description)
-            pb = gtk.gdk.pixbuf_new_from_file('/home/jonas/dev/cream/linuxtag2010/logo.svg').scale_simple(32, 32, gtk.gdk.INTERP_HYPER)
+            info = "<b>{0}</b>\n{1}\n{2}".format(video.title, video.description, convert_ns(int(video.duration) * 1000000000))
+            pb = gtk.gdk.pixbuf_new_from_file('/home/stein/logo.svg').scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
             gtk.gdk.threads_enter()
             self.liststore.append((
@@ -182,21 +204,11 @@ class YouTubePlayer(cream.Module):
 
         for c, row in enumerate(self.liststore):
             video = self.videos[row[0]]
-            pb = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or '/home/jonas/dev/cream/linuxtag2010/logo.svg').scale_simple(32, 32, gtk.gdk.INTERP_HYPER)
+            pb = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or '/home/stein/logo.svg').scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
             row[2] = pb
 
 
     def update(self):
-
-        def convert_ns(t):
-            s,ns = divmod(t, 1000000000)
-            m,s = divmod(s, 60)
-
-            if m < 60:
-                return "%02i:%02i" %(m,s)
-            else:
-                h,m = divmod(m, 60)
-                return "%i:%02i:%02i" %(h,m,s)
 
         try:
             duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
