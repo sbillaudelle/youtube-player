@@ -19,6 +19,7 @@ STATE_PLAYING = 2
 class YouTubePlayer(cream.Module):
 
     state = STATE_NULL
+    fullscreen = False
 
     def __init__(self):
 
@@ -29,7 +30,9 @@ class YouTubePlayer(cream.Module):
         self.interface.add_from_file('interface.ui')
 
         self.window = self.interface.get_object('window')
+        self.fullscreen_window = self.interface.get_object('fullscreen_window')
         self.video_area = self.interface.get_object('video_area')
+        self.fullscreen_video_area = self.interface.get_object('fullscreen_video_area')
         self.search_entry = self.interface.get_object('search_entry')
         self.play_pause_button = self.interface.get_object('play_pause_button')
         self.play_pause_image = self.interface.get_object('play_pause_image')
@@ -38,11 +41,16 @@ class YouTubePlayer(cream.Module):
         self.liststore = self.interface.get_object('liststore')
         self.treeview = self.interface.get_object('treeview')
 
+        self.fullscreen_window.fullscreen()
+
         self.video_area.connect('expose-event', self.expose_cb)
+        self.fullscreen_video_area.connect('expose-event', self.expose_cb)
         self.search_entry.connect('activate', self.search_cb)
         self.play_pause_button.connect('clicked', self.play_pause_cb)
         self.treeview.connect('row-activated', self.row_activated_cb)
         self.window.connect('destroy', lambda *args: self.quit())
+        self.video_area.connect('button-press-event', self.video_area_click_cb)
+        self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
 
         # Connect to YouTube:
         self.youtube = YouTubeAPI(YOUTUBE_DEVELOPER_KEY)
@@ -51,6 +59,8 @@ class YouTubePlayer(cream.Module):
         self.player = gst.Pipeline("player")
 
         self.playbin = gst.element_factory_make("playbin", "playbin")
+        self.video_sink = gst.element_factory_make("ximagesink", "vsink")
+        self.playbin.set_property('video-sink', self.video_sink)
         self.player.add(self.playbin)
 
         bus = self.player.get_bus()
@@ -66,9 +76,30 @@ class YouTubePlayer(cream.Module):
         gobject.timeout_add(1000, self.update)
 
 
+    def video_area_click_cb(self, source, event):
+
+        if event.type == gtk.gdk._2BUTTON_PRESS:
+            self.toggle_fullscreen()
+
+
+    def toggle_fullscreen(self):
+
+        if not self.fullscreen:
+            self.fullscreen_window.show_all()
+            if self.fullscreen_window.window:
+                self.video_sink.set_xwindow_id(self.fullscreen_video_area.window.xid)
+            else:
+                self.fullscreen_window.connect('map', lambda *args: self.video_sink.set_xwindow_id(self.fullscreen_video_area.window.xid))
+            self.fullscreen = True
+        else:
+            self.fullscreen_window.hide()
+            self.video_sink.set_xwindow_id(self.video_area.window.xid)
+            self.fullscreen = False
+
+
     def expose_cb(self, source, event):
 
-        ctx = self.video_area.window.cairo_create()
+        ctx = source.window.cairo_create()
 
         ctx.set_source_rgb(0, 0, 0)
         ctx.paint()
@@ -203,6 +234,12 @@ class YouTubePlayer(cream.Module):
             err, debug = message.parse_error()
             print "Error: %s" % err, debug
             self.player.set_state(gst.STATE_NULL)
+        elif t == gst.MESSAGE_BUFFERING:
+            state = message.parse_buffering()
+            if state < 100:
+                self.pause()
+            else:
+                self.play()
 
 
     def on_sync_message(self, bus, message):

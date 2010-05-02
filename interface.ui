@@ -110,6 +110,7 @@
                     <child>
                       <object class="GtkDrawingArea" id="video_area">
                         <property name="visible">True</property>
+                        <property name="events">GDK_BUTTON_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_STRUCTURE_MASK</property>
                       </object>
                     </child>
                   </object>
@@ -194,5 +195,13 @@
     <property name="step_increment">0.5</property>
     <property name="page_increment">10</property>
     <property name="page_size">10</property>
+  </object>
+  <object class="GtkWindow" id="fullscreen_window">
+    <child>
+      <object class="GtkDrawingArea" id="fullscreen_video_area">
+        <property name="visible">True</property>
+        <property name="events">GDK_BUTTON_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_STRUCTURE_MASK</property>
+      </object>
+    </child>
   </object>
 </interface>
