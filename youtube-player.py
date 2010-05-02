@@ -5,7 +5,7 @@ import gst
 
 import cream
 
-from youtube import YouTubeAPI
+from youtube import YouTubeAPI, RESOLUTIONS
 
 gtk.gdk.threads_init()
 
@@ -18,6 +18,7 @@ STATE_PLAYING = 2
 class YouTubePlayer(cream.Module):
 
     state = STATE_NULL
+    _current_video_id = None
 
     def __init__(self):
 
@@ -32,13 +33,23 @@ class YouTubePlayer(cream.Module):
         self.search_entry = self.interface.get_object('search_entry')
         self.play_pause_button = self.interface.get_object('play_pause_button')
         self.play_pause_image = self.interface.get_object('play_pause_image')
+        self.resolution_chooser = self.interface.get_object('resolution_chooser')
+        self.resolutions_store = self.interface.get_object('resolutions_store')
         self.liststore = self.interface.get_object('liststore')
         self.treeview = self.interface.get_object('treeview')
 
         self.video_area.connect('expose-event', self.expose_cb)
         self.search_entry.connect('activate', self.search_cb)
         self.play_pause_button.connect('clicked', self.play_pause_cb)
+        self.resolution_chooser.connect('changed', self.resolution_changed_cb)
         self.treeview.connect('row-activated', self.row_activated_cb)
+
+        # Prefill the resolution combo box:
+        for index, resolution in enumerate(RESOLUTIONS.iterkeys()):
+            self.resolutions_store.append((resolution,))
+            if resolution == self.config.preferred_resolution:
+                self.resolution_chooser.set_active(index)
+
 
         # Connect to YouTube:
         self.youtube = YouTubeAPI(YOUTUBE_DEVELOPER_KEY)
@@ -98,6 +109,15 @@ class YouTubePlayer(cream.Module):
         else:
             self.pause()
 
+    def resolution_changed_cb(self, resolution_combobox):
+        self.config.preferred_resolution = self.resolutions_store.get_value(
+                resolution_combobox.get_active_iter(), 0)
+        if self._current_video_id:
+            # User changed the quality while playing a video -- replay currently
+            # played video with the selected quality.
+            # TODO: Remember the seek here and re-seek to that point.
+            self.load_video(self._current_video_id)
+
 
     def search(self, search_string):
 
@@ -115,8 +135,8 @@ class YouTubePlayer(cream.Module):
             self.liststore.append((
                 video.video_id,
                 video.title,
-                gtk.gdk.pixbuf_new_from_file('/home/stein/logo.svg').scale_simple(24, 24, gtk.gdk.INTERP_HYPER)
-                ))
+                gtk.gdk.pixbuf_new_from_file('/home/jonas/dev/cream/linuxtag2010/logo.svg').scale_simple(24, 24, gtk.gdk.INTERP_HYPER)
+            ))
         gtk.gdk.threads_leave()
 
 
@@ -144,7 +164,12 @@ class YouTubePlayer(cream.Module):
         self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
 
         video = self.videos[id]
-        self.playbin.set_property('uri', video.video_url)
+        video_url = video.get_video_url(
+            resolution=self.config.preferred_resolution,
+            fallback_to_lower_resolution=True
+        )
+        self.playbin.set_property('uri', video_url)
+        self._current_video_id = id
 
 
     def on_message(self, bus, message):

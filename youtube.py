@@ -4,6 +4,7 @@ import urlparse
 import gdata.youtube
 import gdata.youtube.service
 from cream.util import cached_property
+from cream.util.dicts import ordereddict
 
 
 HTTP_FOUND = 200
@@ -11,11 +12,11 @@ GET_VIDEO_URL = 'http://www.youtube.com/get_video?video_id={video_id}&t={token}'
                 '&eurl=&el=embedded&ps=default&fmt={resolution_code}'
 VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}' \
                  '&el=embedded&ps=default&eurl='
-RESOLUTIONS = {
-    '360p': 18,
-    '720p': 22,
-    '1080p': 37
-}
+RESOLUTIONS = ordereddict((
+    ('1080p', 37),
+    ('720p',  22),
+    ('360p',  18)
+))
 
 # Ordering options
 RELEVANCE  = 'relevance'
@@ -70,7 +71,7 @@ class YouTubeVideo(object):
 
         (``cached_property`` that gets its value from ``find_resolutions``.)
         """
-        return tuple(sorted(self.find_resolutions(), reverse=True))
+        return tuple(self.find_resolutions())
 
     def find_resolutions(self):
         """
@@ -88,14 +89,16 @@ class YouTubeVideo(object):
     def video_url(self):
         return self.get_video_url()
 
-    def get_video_url(self, resolution=None):
+    def get_video_url(self, resolution=None, fallback_to_lower_resolution=False):
         """
         Returns the video stream URL of this video with the given `resolution`.
 
-        If no `resolution` is given, the highest available resolution will be
-        chosen from the ``r
-        esolutions`` attribute.
+        If no `resolution` is given, or (the given `resolution` is not available
+        and `fallback_to_lower_resolution` is ``True``), the highest available
+        resolution will be chosen from the ``resolutions`` attribute.
         """
+        if fallback_to_lower_resolution and resolution not in self.resolutions:
+            resolution = None
         if resolution is None:
             resolution = self.resolutions[0]
         resolution_code = RESOLUTIONS[resolution]
