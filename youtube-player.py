@@ -88,9 +88,11 @@ class YouTubePlayer(cream.Module):
         self.playbin = gst.element_factory_make("playbin2", "playbin")
         self.video_sink = gst.element_factory_make("xvimagesink", "vsink")
         self.playbin.set_property('video-sink', self.video_sink)
-        self.playbin.set_property('buffer-duration', 10000000000)
-        self.playbin.set_property('buffer-size', 1000000000)
+        self.playbin.set_property('buffer-duration', 3000000000)
+        self.playbin.set_property('buffer-size', 2000000000)
         self.player.add(self.playbin)
+
+        self.playbin.set_property('flags', 255)
 
         bus = self.player.get_bus()
         bus.add_signal_watch()
@@ -273,6 +275,7 @@ class YouTubePlayer(cream.Module):
             self.player.set_state(gst.STATE_NULL)
         elif t == gst.MESSAGE_BUFFERING:
             state = message.parse_buffering()
+            print "Buffering... ({0}%)".format(state)
             if state < 100:
                 self.pause()
             else:
