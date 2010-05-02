@@ -1,5 +1,6 @@
 import thread
 
+import gobject
 import gtk
 import gst
 
@@ -32,6 +33,8 @@ class YouTubePlayer(cream.Module):
         self.search_entry = self.interface.get_object('search_entry')
         self.play_pause_button = self.interface.get_object('play_pause_button')
         self.play_pause_image = self.interface.get_object('play_pause_image')
+        self.position_display = self.interface.get_object('position_display')
+        self.progress = self.interface.get_object('progress')
         self.liststore = self.interface.get_object('liststore')
         self.treeview = self.interface.get_object('treeview')
 
@@ -39,6 +42,7 @@ class YouTubePlayer(cream.Module):
         self.search_entry.connect('activate', self.search_cb)
         self.play_pause_button.connect('clicked', self.play_pause_cb)
         self.treeview.connect('row-activated', self.row_activated_cb)
+        self.window.connect('destroy', lambda *args: self.quit())
 
         # Connect to YouTube:
         self.youtube = YouTubeAPI(YOUTUBE_DEVELOPER_KEY)
@@ -58,6 +62,8 @@ class YouTubePlayer(cream.Module):
         self.videos = {}
 
         self.window.show_all()
+
+        gobject.timeout_add(1000, self.update)
 
 
     def expose_cb(self, source, event):
@@ -109,15 +115,55 @@ class YouTubePlayer(cream.Module):
 
         res = self.youtube.search(search_string)
 
-        gtk.gdk.threads_enter()
         for video in res:
             self.videos[video.video_id] = video
+
+            info = "<b>{0}</b>\n{1}".format(video.title, video.description)
+            pb = gtk.gdk.pixbuf_new_from_file('/home/stein/logo.svg').scale_simple(32, 32, gtk.gdk.INTERP_HYPER)
+
+            gtk.gdk.threads_enter()
             self.liststore.append((
                 video.video_id,
-                video.title,
-                gtk.gdk.pixbuf_new_from_file('/home/stein/logo.svg').scale_simple(24, 24, gtk.gdk.INTERP_HYPER)
+                info,
+                pb
                 ))
-        gtk.gdk.threads_leave()
+            gtk.gdk.threads_leave()
+
+        for c, row in enumerate(self.liststore):
+            video = self.videos[row[0]]
+            pb = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or '/home/stein/logo.svg').scale_simple(32, 32, gtk.gdk.INTERP_HYPER)
+            row[2] = pb
+
+
+    def update(self):
+
+        def convert_ns(t):
+            s,ns = divmod(t, 1000000000)
+            m,s = divmod(s, 60)
+    
+            if m < 60:
+                return "%02i:%02i" %(m,s)
+            else:
+                h,m = divmod(m, 60)
+                return "%i:%02i:%02i" %(h,m,s)
+
+        try:
+            duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
+            position_ns = self.player.query_position(gst.FORMAT_TIME, None)[0]
+
+            duration = convert_ns(duration_ns)
+            position = convert_ns(position_ns)
+
+            percentage = (float(position_ns) / float(duration_ns)) * 100.0
+
+            gtk.gdk.threads_enter()
+            self.position_display.set_text("{0}/{1}".format(position, duration))
+            self.progress.set_value(percentage)
+            gtk.gdk.threads_leave()
+        except:
+            pass
+
+        return True
 
 
     def play(self):
