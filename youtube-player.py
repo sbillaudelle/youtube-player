@@ -326,10 +326,7 @@ class YouTubePlayer(cream.Module):
         t = message.type
 
         if t == gst.MESSAGE_EOS:
-            self.player.set_state(gst.STATE_NULL)
-            self.state = STATE_NULL
-            self.draw()
-            self.update_position(0, 0)
+            self.set_state(STATE_NULL)
         elif t == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
             print "Error: %s" % err, debug
@@ -338,9 +335,11 @@ class YouTubePlayer(cream.Module):
             state = message.parse_buffering()
             self.throbber.set_progress(state / 100.0)
             if state < 100:
-                self.set_state(STATE_BUFFERING)
+                if self.state == STATE_PLAYING:
+                    self.set_state(STATE_BUFFERING)
             else:
-                self.set_state(STATE_PLAYING)
+                if self.state == STATE_BUFFERING:
+                    self.set_state(STATE_PLAYING)
 
 
     def on_sync_message(self, bus, message):
