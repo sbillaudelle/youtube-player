@@ -318,9 +318,9 @@ class YouTubePlayer(cream.Module):
 
         type = message.type
 
-        if t == gst.MESSAGE_EOS:
+        if type == gst.MESSAGE_EOS:
             self.set_state(STATE_NULL)
-        elif t == gst.MESSAGE_ERROR:
+        elif type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
             print "Error: %s" % err, debug
             self.player.set_state(gst.STATE_NULL)
