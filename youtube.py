@@ -45,7 +45,7 @@ class YouTubeVideo(object):
             tags        = feed_entry.media.keywords.text,
             uri         = feed_entry.media.player.url,
             duration    = feed_entry.media.duration.seconds,
-            view_count  = feed_entry.statistics.view_count,
+            view_count  = feed_entry.statistics and feed_entry.statistics.view_count,
             rating      = feed_entry.rating and feed_entry.rating.average,
             video_id    = feed_entry.id.text.split('/')[-1]
         )
