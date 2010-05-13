@@ -7,7 +7,7 @@ import gst
 
 import cream
 
-from youtube import YouTubeAPI, RESOLUTIONS
+from youtube import YouTubeAPI, RESOLUTIONS, RELEVANCE, PUBLISHED
 from throbber import Throbber
 
 gtk.gdk.threads_init()
@@ -52,7 +52,8 @@ class YouTubePlayer(cream.Module):
                     'fullscreen_video_area', 'search_entry', 'play_pause_button',
                     'play_pause_image', 'resolution_chooser', 'resolutions_store',
                     'position_display', 'progress', 'liststore', 'treeview',
-                    'cellrenderer_info', 'cellrenderer_thumbnail'):
+                    'cellrenderer_info', 'cellrenderer_thumbnail', 'sort_by_menu',
+                    'sort_by_relevance', 'sort_by_published'):
             setattr(self, obj, self.interface.get_object(obj))
 
         self.throbber = Throbber()
@@ -61,10 +62,10 @@ class YouTubePlayer(cream.Module):
         self.video_area.set_app_paintable(True)
         self.fullscreen_video_area.set_app_paintable(True)
         self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
-
         self.video_area.connect('expose-event', self.expose_cb)
-        self.fullscreen_video_area.connect('expose-event', self.expose_cb)
+        self.fullscreen_video_area.connect('expose-event', self.expose_cb) 
         self.search_entry.connect('activate', self.search_cb)
+        self.search_entry.connect('icon-release', lambda *args: self.sort_by_menu.popup(None, None, None, 1, 0))
         self.play_pause_button.connect('clicked', self.play_pause_cb)
         self.resolution_chooser.connect('changed', self.resolution_changed_cb)
         self.treeview.connect('row-activated', self.row_activated_cb)
@@ -72,6 +73,7 @@ class YouTubePlayer(cream.Module):
         self.window.connect('destroy', lambda *args: self.quit())
         self.video_area.connect('button-press-event', self.video_area_click_cb)
         self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
+        self.sort_by_menu.connect('selection-done', self.search_cb)
 
         # Prefill the resolution combo box:
         for index, resolution in enumerate(RESOLUTIONS.iterkeys()):
@@ -201,13 +203,19 @@ class YouTubePlayer(cream.Module):
 
     def search(self, search_string):
 
+        sort_by = RELEVANCE
+        if self.sort_by_relevance.get_active():
+            sort_by = RELEVANCE
+        elif self.sort_by_published.get_active():
+            sort_by = PUBLISHED
+
         self.liststore.clear()
-        thread.start_new_thread(self._search, (search_string,))
+        thread.start_new_thread(self._search, (search_string, sort_by))
 
 
-    def _search(self, search_string):
+    def _search(self, search_string, sort_by=RELEVANCE):
 
-        search_result = self.youtube.search(search_string)
+        search_result = self.youtube.search(search_string, sort_by)
 
         for video in search_result:
             self.videos[video.video_id] = video
