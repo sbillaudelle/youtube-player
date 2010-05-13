@@ -51,7 +51,7 @@ class YouTubeVideo(object):
             video_id    = feed_entry.id.text.split('/')[-1]
         )
 
-    @cached_property
+    @cached_property(not_none=True)
     def _video_info(self):
         return urlparse.parse_qs(
             urllib.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
@@ -61,7 +61,7 @@ class YouTubeVideo(object):
     def creator(self):
         return self._video_info['creator']
 
-    @cached_property
+    @cached_property(not_none=True)
     def resolutions(self):
         """
         Tuple with all resolutions available for this video.
