@@ -1,6 +1,9 @@
 <?xml version="1.0" ?>
 <manifest namespace="org.cream" version="0.0.5">
-    <component name="YouTube Player" id=".YouTubePlayer" version="0.1" type=".Module" entry="youtube-player.py">
+    <component name="YouTube Player" id=".YouTubePlayer" version="0.1" type=".Application" entry="youtube-player.py">
+        <description lang="en" content="A lightweight and flashfree YouTube player." />
+        <icon size="scalable" path="youtube-player.svg" />
+
         <license title="GPL" version="3+" />
 
         <use-feature id=".config" />
@@ -8,4 +11,13 @@
         <author name="Jonas Haag" mail="jonas@cream-project.org" type="developer" />
         <author name="Sebastian Billaudelle" mail="stein@cream-project.org" type="developer" />
     </component>
+
+    <package auto="true">
+        <rule type="application" files="*.(xml|svg|py|ui)" />
+        <rule type="desktop" files="youtube-player.desktop" />
+        <rule type="icon" files="youtube-player.svg" />
+        <rule type="ignore" files="configuration/*" />
+        <rule type="ignore" files="*.pyc" />
+        <rule type="ignore" files=".*" />
+    </package>
 </manifest>

@@ -43,6 +43,7 @@
                     <property name="can_focus">True</property>
                     <property name="invisible_char">&#x25CF;</property>
                     <property name="primary_icon_stock">gtk-find</property>
+                    <property name="primary_icon_activatable">True</property>
                     <property name="primary_icon_sensitive">True</property>
                   </object>
                   <packing>
@@ -177,16 +178,6 @@
                       </packing>
                     </child>
                     <child>
-                      <object class="GtkLabel" id="position_display">
-                        <property name="visible">True</property>
-                        <property name="label" translatable="yes">00:00/00:00</property>
-                      </object>
-                      <packing>
-                        <property name="expand">False</property>
-                        <property name="position">2</property>
-                      </packing>
-                    </child>
-                    <child>
                       <object class="GtkComboBox" id="resolution_chooser">
                         <property name="visible">True</property>
                         <property name="model">resolutions_store</property>
@@ -196,6 +187,16 @@
                             <attribute name="text">0</attribute>
                           </attributes>
                         </child>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="position">2</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="position_display">
+                        <property name="visible">True</property>
+                        <property name="label" translatable="yes">00:00/00:00</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -231,6 +232,26 @@
       <object class="GtkDrawingArea" id="fullscreen_video_area">
         <property name="visible">True</property>
         <property name="events">GDK_BUTTON_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_STRUCTURE_MASK</property>
+      </object>
+    </child>
+  </object>
+  <object class="GtkMenu" id="sort_by_menu">
+    <property name="visible">True</property>
+    <child>
+      <object class="GtkRadioMenuItem" id="sort_by_relevance">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">Sort by relevance</property>
+        <property name="active">True</property>
+        <property name="draw_as_radio">True</property>
+        <property name="group">sort_by_published</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkRadioMenuItem" id="sort_by_published">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">Sort by publishing date</property>
+        <property name="use_underline">True</property>
+        <property name="draw_as_radio">True</property>
       </object>
     </child>
   </object>
