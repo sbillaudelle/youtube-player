@@ -15,6 +15,7 @@ VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}' \
 RESOLUTIONS = ordereddict((
     ('1080p', 37),
     ('720p',  22),
+    ('480p', 34),
     ('360p',  18)
 ))
 

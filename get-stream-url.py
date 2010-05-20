@@ -13,6 +13,7 @@ try:
 except IndexError:
     resolution = video.resolutions[0]
 else:
+    # TODO: Think about new names for stuff like 480p
     resolution = {
         'low' : '360p',
         'middle' : '720p',
