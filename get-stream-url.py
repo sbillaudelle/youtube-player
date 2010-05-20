@@ -1,7 +1,11 @@
+#!/usr/bin/env python
 import youtube
 import sys
 
 video_id = sys.argv[1]
+if 'v=' in video_id:
+    import urlparse
+    video_id = urlparse.parse_qs(urlparse.urlparse(video_id).query)['v'][0]
 video = youtube.YouTubeVideo(video_id=video_id)
 
 try:
