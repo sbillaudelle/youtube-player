@@ -44,6 +44,8 @@ class YouTubePlayer(cream.Module):
 
         cream.Module.__init__(self)
 
+        self._main_thread_id = thread.get_ident()
+
         # Build GTK+ interface:
         self.interface = gtk.Builder()
         self.interface.add_from_file('interface.ui')
@@ -160,7 +162,7 @@ class YouTubePlayer(cream.Module):
             logo_x = (width - logo_width) / 2.0
             logo_y = (height - logo_height) / 2.0
 
-            thumbnail = gtk.gdk.pixbuf_new_from_file_at_size(PLAYER_LOGO, logo_width, logo_height)
+            thumbnail = gtk.gdk.pixbuf_new_from_file_at_size(PLAYER_LOGO, int(logo_width), int(logo_height))
             ctx.set_source_pixbuf(thumbnail, logo_x, logo_y)
             ctx.paint()
 
@@ -267,54 +269,66 @@ class YouTubePlayer(cream.Module):
         self.progress.set_value(percentage)
 
 
+    def threads_enter(self):
+
+        if self._main_thread_id != thread.get_ident():
+            gtk.gdk.threads_enter()
+
+
+    def threads_leave(self):
+
+        if self._main_thread_id != thread.get_ident():
+            gtk.gdk.threads_leave()
+
+
     def set_state(self, state):
 
         if state in [STATE_NULL, STATE_PAUSED, STATE_PLAYING]:
-            gtk.gdk.threads_enter()
+            self.threads_enter()
             if self.control_area.get_child() != self.play_pause_button:
                 self.control_area.remove(self.throbber)
                 self.control_area.add(self.play_pause_button)
             self.play_pause_button.set_sensitive(True)
-            gtk.gdk.threads_leave()
+            self.threads_leave()
 
         if state == STATE_NULL:
             self.player.set_state(gst.STATE_NULL)
             self.state = STATE_NULL
 
-            gtk.gdk.threads_enter()
+            self.threads_enter()
             self.update_position(0, 0)
             self.draw()
             self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
-            gtk.gdk.threads_leave()
+            self.threads_leave()
 
         elif state == STATE_PAUSED:
             self.player.set_state(gst.STATE_PAUSED)
             self.state = STATE_PAUSED
 
-            gtk.gdk.threads_enter()
+            self.threads_enter()
             self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
-            gtk.gdk.threads_leave()
+            self.threads_leave()
 
         elif state == STATE_PLAYING:
             self.player.set_state(gst.STATE_PLAYING)
             self.state = STATE_PLAYING
 
-            gtk.gdk.threads_enter()
+            self.threads_enter()
             self.draw()
             self.play_pause_image.set_from_icon_name('media-playback-pause', gtk.ICON_SIZE_BUTTON)
-            gtk.gdk.threads_leave()
+            self.threads_leave()
 
         elif state == STATE_BUFFERING:
             self.player.set_state(gst.STATE_PAUSED)
             self.state = STATE_BUFFERING
 
-            gtk.gdk.threads_enter()
+            self.threads_enter()
             if self.control_area.get_child() != self.throbber:
                 self.throbber.set_size_request(self.play_pause_button.get_allocation().width, self.play_pause_button.get_allocation().height)
                 self.control_area.remove(self.play_pause_button)
                 self.control_area.add(self.throbber)
                 self.throbber.show()
-            gtk.gdk.threads_leave()
+            self.threads_leave()
 
 
     def load_video(self, id, play=True):
