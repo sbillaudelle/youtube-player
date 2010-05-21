@@ -79,7 +79,7 @@ class Slider(gtk.Viewport):
         width = (len(self.layout.get_children()) or 1) * allocation.width
         self.content.set_size_request(width, allocation.height)
 
-        if self.active_widget:
+        if self.active_widget and (self.get_allocation() != allocation):
             adjustment = self.get_hadjustment()
             adjustment.set_value(self.active_widget.get_allocation().x)
 
@@ -162,6 +162,8 @@ class YouTubePlayer(cream.Module):
 
         self.playbin = gst.element_factory_make("playbin2", "playbin")
         self.video_sink = gst.element_factory_make("xvimagesink", "vsink")
+        self.playbin.set_property('suburi', 'file:///home/stein/Labs/Experiments/Subtitles/foo.srt')
+        self.playbin.set_property('subtitle-font-desc', 'Sans 14')
         self.playbin.set_property('video-sink', self.video_sink)
         self.playbin.set_property('buffer-duration', 3000000000)
         self.playbin.set_property('buffer-size', 2000000000)
@@ -177,7 +179,7 @@ class YouTubePlayer(cream.Module):
 
         self.window.show_all()
 
-        gobject.timeout_add(1000, self.update_progressbar)
+        gobject.timeout_add(200, self.update_progressbar)
 
 
     def extend_slide_to_info_timeout(self):
