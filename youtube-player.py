@@ -6,6 +6,7 @@ import gtk
 import gst
 
 import cream
+import cream.gui
 
 from youtube import YouTubeAPI, RESOLUTIONS, RELEVANCE, PUBLISHED
 from throbber import Throbber
@@ -34,6 +35,60 @@ def convert_ns(t):
         return "%i:%02i:%02i" %(h,m,s)
 
 
+class Slider(gtk.Viewport):
+
+    def __init__(self):
+
+        self.active_widget = None
+
+        gtk.Viewport.__init__(self)
+        self.set_shadow_type(gtk.SHADOW_NONE)
+
+        self.layout = gtk.HBox(True)
+
+        self.content = gtk.EventBox()
+        self.content.add(self.layout)
+
+        self.container = gtk.Fixed()
+        self.container.add(self.content)
+        self.add(self.container)
+
+        self.connect('size-allocate', self.size_allocate_cb)
+
+
+    def slide_to(self, widget):
+
+        self.active_widget = widget
+
+        def update(source, status):
+            pos = end_position - start_position
+            adjustment.set_value(start_position + int(round(status * pos)))
+
+        adjustment = self.get_hadjustment()
+        start_position = adjustment.get_value()
+        end_position = widget.get_allocation().x
+
+        if start_position != end_position:
+            t = cream.gui.Timeline(500, cream.gui.CURVE_SINE)
+            t.connect('update', update)
+            t.run()
+
+
+    def size_allocate_cb(self, source, allocation):
+
+        width = (len(self.layout.get_children()) or 1) * allocation.width
+        self.content.set_size_request(width, allocation.height)
+
+        if self.active_widget:
+            adjustment = self.get_hadjustment()
+            adjustment.set_value(self.active_widget.get_allocation().x)
+
+
+    def append(self, widget):
+
+        self.layout.pack_start(widget, True, True, 0)
+
+
 class YouTubePlayer(cream.Module):
 
     state = STATE_NULL
@@ -45,6 +100,7 @@ class YouTubePlayer(cream.Module):
         cream.Module.__init__(self)
 
         self._main_thread_id = thread.get_ident()
+        self._slide_to_info_timeout = None
 
         # Build GTK+ interface:
         self.interface = gtk.Builder()
@@ -55,10 +111,18 @@ class YouTubePlayer(cream.Module):
                     'play_pause_image', 'resolution_chooser', 'resolutions_store',
                     'position_display', 'progress', 'liststore', 'treeview',
                     'cellrenderer_info', 'cellrenderer_thumbnail', 'sort_by_menu',
-                    'sort_by_relevance', 'sort_by_published'):
+                    'sort_by_relevance', 'sort_by_published',
+                    'info_box', 'search_box', 'back_to_search_button', 'sidebar'):
             setattr(self, obj, self.interface.get_object(obj))
 
         self.throbber = Throbber()
+
+        self.slider = Slider()
+        self.slider.append(self.search_box)
+        self.slider.append(self.info_box)
+        self.slider.set_size_request(240, 300)
+
+        self.sidebar.add(self.slider)
 
         self.fullscreen_window.fullscreen()
         self.video_area.set_app_paintable(True)
@@ -71,18 +135,23 @@ class YouTubePlayer(cream.Module):
         self.play_pause_button.connect('clicked', self.play_pause_cb)
         self.resolution_chooser.connect('changed', self.resolution_changed_cb)
         self.treeview.connect('row-activated', self.row_activated_cb)
-        self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
+        #self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
         self.window.connect('destroy', lambda *args: self.quit())
         self.video_area.connect('button-press-event', self.video_area_click_cb)
         self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
         self.sort_by_menu.connect('selection-done', self.search_cb)
+        self.slider.connect('size-allocate', self.slider_size_allocate_cb)
+        self.back_to_search_button.connect('clicked', self.back_to_search_button_clicked_cb)
+
+        self.search_entry.connect('changed', lambda *args: self.extend_slide_to_info_timeout())
+        self.search_entry.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
+        self.treeview.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
 
         # Prefill the resolution combo box:
         for index, resolution in enumerate(RESOLUTIONS.iterkeys()):
             self.resolutions_store.append((resolution,))
             if resolution == self.config.preferred_resolution:
                 self.resolution_chooser.set_active(index)
-
 
         # Connect to YouTube:
         self.youtube = YouTubeAPI(YOUTUBE_DEVELOPER_KEY)
@@ -109,8 +178,29 @@ class YouTubePlayer(cream.Module):
 
         gobject.timeout_add(1000, self.update_progressbar)
 
+
+    def extend_slide_to_info_timeout(self):
+
+        if self._slide_to_info_timeout:
+            gobject.source_remove(self._slide_to_info_timeout)
+            self._slide_to_info_timeout = gobject.timeout_add(5000, lambda *args: self.slider.slide_to(self.info_box))
+
+
+    def back_to_search_button_clicked_cb(self, source):
+
+        self.slider.slide_to(self.search_box)
+
+        self._slide_to_info_timeout = gobject.timeout_add(5000, lambda: self.slider.slide_to(self.info_box))
+
+
+    def slider_size_allocate_cb(self, source, allocation):
+
+        pass#self.interface.get_object('slider_box').set_size_request(allocation.width * 2, allocation.height)
+
+
     def treeview_size_allocate_cb(self, source, allocation):
-        self.cellrenderer_info.set_property('width', allocation.width - ICON_SIZE - 8)
+        print allocation
+        pass#self.cellrenderer_info.set_property('width', allocation.width - ICON_SIZE - 8)
 
 
     def video_area_click_cb(self, source, event):
@@ -192,6 +282,7 @@ class YouTubePlayer(cream.Module):
             self.set_state(STATE_PLAYING)
         else:
             self.set_state(STATE_PAUSED)
+
 
     def resolution_changed_cb(self, resolution_combobox):
         self.config.preferred_resolution = self.resolutions_store.get_value(
@@ -332,6 +423,8 @@ class YouTubePlayer(cream.Module):
 
 
     def load_video(self, id, play=True):
+
+        self.slider.slide_to(self.info_box)
 
         self.set_state(STATE_NULL)
 
