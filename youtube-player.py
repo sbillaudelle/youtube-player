@@ -112,7 +112,8 @@ class YouTubePlayer(cream.Module):
                     'position_display', 'progress', 'liststore', 'treeview',
                     'cellrenderer_info', 'cellrenderer_thumbnail', 'sort_by_menu',
                     'sort_by_relevance', 'sort_by_published',
-                    'info_box', 'search_box', 'back_to_search_button', 'sidebar'):
+                    'info_box', 'search_box', 'back_to_search_button', 'sidebar',
+                    'info_label_title', 'info_label_description'):
             setattr(self, obj, self.interface.get_object(obj))
 
         self.throbber = Throbber()
@@ -135,13 +136,13 @@ class YouTubePlayer(cream.Module):
         self.play_pause_button.connect('clicked', self.play_pause_cb)
         self.resolution_chooser.connect('changed', self.resolution_changed_cb)
         self.treeview.connect('row-activated', self.row_activated_cb)
-        #self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
+        self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
         self.window.connect('destroy', lambda *args: self.quit())
         self.video_area.connect('button-press-event', self.video_area_click_cb)
         self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
         self.sort_by_menu.connect('selection-done', self.search_cb)
-        self.slider.connect('size-allocate', self.slider_size_allocate_cb)
         self.back_to_search_button.connect('clicked', self.back_to_search_button_clicked_cb)
+        self.info_label_description.connect('size-allocate', lambda source, allocation: source.set_size_request(allocation.width - 2, -1))
 
         self.search_entry.connect('changed', lambda *args: self.extend_slide_to_info_timeout())
         self.search_entry.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
@@ -188,19 +189,16 @@ class YouTubePlayer(cream.Module):
 
     def back_to_search_button_clicked_cb(self, source):
 
-        self.slider.slide_to(self.search_box)
+        if self._slide_to_info_timeout:
+            gobject.source_remove(self._slide_to_info_timeout)
 
+        self.slider.slide_to(self.search_box)
         self._slide_to_info_timeout = gobject.timeout_add(5000, lambda: self.slider.slide_to(self.info_box))
 
 
-    def slider_size_allocate_cb(self, source, allocation):
-
-        pass#self.interface.get_object('slider_box').set_size_request(allocation.width * 2, allocation.height)
-
-
     def treeview_size_allocate_cb(self, source, allocation):
-        print allocation
-        pass#self.cellrenderer_info.set_property('width', allocation.width - ICON_SIZE - 8)
+
+        self.cellrenderer_info.set_property('width', allocation.width - ICON_SIZE - 8)
 
 
     def video_area_click_cb(self, source, event):
@@ -261,6 +259,8 @@ class YouTubePlayer(cream.Module):
 
         search_string = self.search_entry.get_text()
         self.search(search_string)
+
+        self.extend_slide_to_info_timeout()
 
 
     def row_activated_cb(self, source, iter, path):
@@ -429,6 +429,10 @@ class YouTubePlayer(cream.Module):
         self.set_state(STATE_NULL)
 
         video = self.videos[id]
+
+        self.info_label_title.set_text(video.title)
+        self.info_label_description.set_text(video.description)
+
         video_url = video.get_video_url(
             resolution=self.config.preferred_resolution,
             fallback_to_lower_resolution=True
