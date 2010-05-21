@@ -7,7 +7,7 @@ import gst
 
 import cream
 
-from youtube import YouTubeAPI, RESOLUTIONS, RELEVANCE, PUBLISHED
+from youtube import API as YouTubeAPI, RESOLUTIONS, RELEVANCE, PUBLISHED
 from throbber import Throbber
 
 gtk.gdk.threads_init()

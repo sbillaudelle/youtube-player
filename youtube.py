@@ -1,6 +1,7 @@
 import re
 import urllib
 import urlparse
+from datetime import datetime
 import gdata.youtube
 import gdata.youtube.service
 from cream.util import cached_property
@@ -13,10 +14,11 @@ GET_VIDEO_URL = 'http://www.youtube.com/get_video?video_id={video_id}&t={token}'
 VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}' \
                  '&el=embedded&ps=default&eurl='
 RESOLUTIONS = ordereddict((
-    ('1080p', 37),
-    ('720p',  22),
-    ('480p', 34),
-    ('360p',  18)
+    (37, '1080p'),
+    (22, '720p'),
+    (34, '480p'),
+    (18, '360p'),
+    (5,  'FLV1')
 ))
 
 # Ordering options
@@ -25,8 +27,27 @@ VIEW_COUNT = 'viewCount'
 PUBLISHED  = 'published'
 RATING     = 'rating'
 
+RESOLUTION_WARNING = """Found unknown resolution with id {resolution_id}.
+Please file a bug at http://github.com/sbillaudelle/youtube-player/issues
+or send a mail to cream@cream-project.org" including the following information:
+    Video-ID: {video_id}
+Thank you!"""
 
-class YouTubeVideo(object):
+
+
+def _VideoInfoProperty(video_info_key, index=0, allow_none=False, type=None):
+    def getter(self):
+        try:
+            var = self._video_info[video_info_key][index]
+        except KeyError:
+            if not allow_none:
+                raise
+        else:
+            if type is not None:
+                return type(var)
+    return getter
+
+class Video(object):
     """ Represents a YouTube video. """
 
     def __init__(self, **attributes):
@@ -52,70 +73,34 @@ class YouTubeVideo(object):
             video_id    = feed_entry.id.text.split('/')[-1]
         )
 
-    @cached_property(not_none=True)
+    thumbnail_url   = _VideoInfoProperty('thumbnail_url')
+    rating          = _VideoInfoProperty('avg_rating', type=float)
+    datetime        = _VideoInfoProperty('timestamp', type=datetime.fromtimestamp)
+
+
+    @cached_property
     def _video_info(self):
         return urlparse.parse_qs(
             urllib.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
         )
 
-    @property
-    def creator(self):
-        return self._video_info['creator']
-
-    @cached_property(not_none=True)
-    def resolutions(self):
-        """
-        Tuple with all resolutions available for this video.
-        Possible resolutions are::
-
-            '360p', '720p', '1080p'
-
-        (``cached_property`` that gets its value from ``find_resolutions``.)
-        """
-        return tuple(self.find_resolutions())
-
-    def find_resolutions(self):
-        """
-        Finds all resolutions in which this video is available.
-        This method sends 3 HTTP requests to the YouTube servers.
-        """
-        # TODO: List of available resolutions/stream urls can be extracted
-        # from ``self._video_info``, so no extra HTTP requests needed here.
-        for resolution, resolution_code in RESOLUTIONS.iteritems():
-            urlhandle = urllib.urlopen(self.get_video_url(resolution))
-            if urlhandle.getcode() == HTTP_FOUND:
-                yield resolution
-
     @cached_property
-    def video_url(self):
-        return self.get_video_url()
+    def stream_urls(self):
+        urls = dict()
+        for item in self._video_info['fmt_stream_map']:
+            resolution_id, stream_url = item.split('|')
+            resolution_id = int(resolution_id)
+            try:
+                resolution_name = RESOLUTIONS[resolution_id]
+            except KeyError:
+                self._warn_unknown_resolution(resolution_id)
+            else:
+                urls[resolution_name] = self._cleanup_stream_url(stream_url)
+        return urls
 
-    def get_video_url(self, resolution=None, fallback_to_lower_resolution=False):
-        """
-        Returns the video stream URL of this video with the given `resolution`.
-
-        If no `resolution` is given, or (the given `resolution` is not available
-        and `fallback_to_lower_resolution` is ``True``), the highest available
-        resolution will be chosen from the ``resolutions`` attribute.
-        """
-        if fallback_to_lower_resolution and resolution not in self.resolutions:
-            resolution = None
-        if resolution is None:
-            resolution = self.resolutions[0]
-        resolution_code = RESOLUTIONS[resolution]
-
-        return GET_VIDEO_URL.format(
-            token=self._video_info['token'],
-            video_id=self.video_id,
-            resolution_code=resolution_code
-        )
-
-    @property
-    def thumbnail_url(self):
-        try:
-            return self._video_info['thumbnail_url'][0]
-        except KeyError:
-            return None
+    def _warn_unknown_resolution(self, resolution_id):
+        print RESOLUTION_WARNING.format(resolution_id=resolution_id,
+                                        video_id=self.video_id)
 
     @cached_property
     def thumbnail_path(self):
@@ -129,7 +114,7 @@ class YouTubeVideo(object):
         return file_name
 
 
-class YouTubeAPI(object):
+class API(object):
 
     def __init__(self, developer_key):
 
@@ -146,4 +131,4 @@ class YouTubeAPI(object):
         feed = self.service.YouTubeQuery(query)
 
         for entry in feed.entry:
-            yield YouTubeVideo.from_feed_entry(entry)
+            yield Video.from_feed_entry(entry)

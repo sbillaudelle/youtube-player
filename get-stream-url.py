@@ -27,6 +27,12 @@ else:
         print "Warning: Requested video {video_id} is not available in {resolution}!".format(**globals())
         resolution = video.resolutions[0]
 
+if '--debug' in sys.argv or '-d' in sys.argv:
+    try:
+        import pprint
+        pprint.pprint(video._video_info)
+    except ImportError:
+        print video._video_info
 video_url = video.get_video_url(resolution=resolution)
 
 print "mp4 URL for {video_id} ({resolution}) is\n{video_url}".format(**globals())
