@@ -182,17 +182,22 @@ class YouTubePlayer(cream.Module):
         gobject.timeout_add(200, self.update_progressbar)
 
 
-    def extend_slide_to_info_timeout(self):
+    def remove_slide_to_info_timeout(self):
 
         if self._slide_to_info_timeout:
             gobject.source_remove(self._slide_to_info_timeout)
+
+
+    def extend_slide_to_info_timeout(self):
+
+        if self._slide_to_info_timeout:
+            self.remove_slide_to_info_timeout()
             self._slide_to_info_timeout = gobject.timeout_add(5000, lambda *args: self.slider.slide_to(self.info_box))
 
 
     def back_to_search_button_clicked_cb(self, source):
 
-        if self._slide_to_info_timeout:
-            gobject.source_remove(self._slide_to_info_timeout)
+        self.remove_slide_to_info_timeout()
 
         self.slider.slide_to(self.search_box)
         self._slide_to_info_timeout = gobject.timeout_add(5000, lambda: self.slider.slide_to(self.info_box))
@@ -451,6 +456,8 @@ class YouTubePlayer(cream.Module):
         type = message.type
 
         if type == gst.MESSAGE_EOS:
+            self.remove_slide_to_info_timeout()
+            self.slider.slide_to(self.search_box)
             self.set_state(STATE_NULL)
         elif type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
