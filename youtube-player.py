@@ -270,40 +270,51 @@ class YouTubePlayer(cream.Module):
     def set_state(self, state):
 
         if state in [STATE_NULL, STATE_PAUSED, STATE_PLAYING]:
+            gtk.gdk.threads_enter()
             if self.control_area.get_child() != self.play_pause_button:
                 self.control_area.remove(self.throbber)
                 self.control_area.add(self.play_pause_button)
             self.play_pause_button.set_sensitive(True)
+            gtk.gdk.threads_leave()
 
         if state == STATE_NULL:
             self.player.set_state(gst.STATE_NULL)
             self.state = STATE_NULL
 
+            gtk.gdk.threads_enter()
             self.update_position(0, 0)
-
             self.draw()
             self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+            gtk.gdk.threads_leave()
 
         elif state == STATE_PAUSED:
             self.player.set_state(gst.STATE_PAUSED)
             self.state = STATE_PAUSED
+
+            gtk.gdk.threads_enter()
             self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+            gtk.gdk.threads_leave()
 
         elif state == STATE_PLAYING:
             self.player.set_state(gst.STATE_PLAYING)
             self.state = STATE_PLAYING
+
+            gtk.gdk.threads_enter()
             self.draw()
             self.play_pause_image.set_from_icon_name('media-playback-pause', gtk.ICON_SIZE_BUTTON)
+            gtk.gdk.threads_leave()
 
         elif state == STATE_BUFFERING:
             self.player.set_state(gst.STATE_PAUSED)
             self.state = STATE_BUFFERING
 
+            gtk.gdk.threads_enter()
             if self.control_area.get_child() != self.throbber:
                 self.throbber.set_size_request(self.play_pause_button.get_allocation().width, self.play_pause_button.get_allocation().height)
                 self.control_area.remove(self.play_pause_button)
                 self.control_area.add(self.throbber)
                 self.throbber.show()
+            gtk.gdk.threads_leave()
 
 
     def load_video(self, id, play=True):
