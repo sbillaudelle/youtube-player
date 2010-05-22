@@ -108,7 +108,7 @@ class Slider(gtk.Viewport):
         end_position = widget.get_allocation().x
 
         if start_position != end_position:
-            t = cream.gui.Timeline(500, cream.gui.CURVE_SINE)
+            t = Timeline(500, CURVE_SINE)
             t.connect('update', update)
             t.run()
 
