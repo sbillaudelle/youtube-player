@@ -9,8 +9,16 @@
             <item type='str'>720p</item>
         </item>
         <item type='tuple'>
+            <item type='str'>480p</item>
+            <item type='str'>480p</item>
+        </item>
+        <item type='tuple'>
             <item type='str'>360p</item>
             <item type='str'>360p</item>
+        </item>
+        <item type='tuple'>
+            <item type='str'>FLV1</item>
+            <item type='str'>FLV1</item>
         </item>
     </preferred_resolution>
 </configuration>
