@@ -211,12 +211,15 @@ class Video(object):
         Removes all unnecessary information from the given stream ``url``
         to protect the user's privacy as good as possible.
         """
-        regex_substitutions = (
-            ('ip=\d+\.\d+\.\d+\.\d+', 'ip=0.0.0.0'),
-            ('ipbits=\d+', 'ipbits=0')
-        )
-        for pattern, replace in regex_substitutions:
-            url = re.sub(pattern, replace, url)
+        # XXX: Stripping away IP information seems to not work
+        # with all videos, so we disable that until we know
+        # in which cases we can safely remove the IP stuff.
+        #regex_substitutions = (
+        #    ('ip=\d+\.\d+\.\d+\.\d+', 'ip=0.0.0.0'),
+        #    ('ipbits=\d+', 'ipbits=0')
+        #)
+        #for pattern, replace in regex_substitutions:
+        #    url = re.sub(pattern, replace, url)
         return url
 
 
@@ -224,7 +227,6 @@ class Video(object):
         print RESOLUTION_WARNING.format(resolution_id=resolution_id,
                                         video_id=self.video_id)
 
-    @cached_property
     def download_thumbnail(self):
         """
         Downloads the video thumbnail to the tempfile directory and returns
@@ -232,8 +234,10 @@ class Video(object):
 
         (``request_video_info`` has to be called before accessing this property)
         """
+        print "DOWNLOAD THUMB", self._thumbnail_path
         return self._thumbnail_path
 
+    @cached_property
     def _thumbnail_path(self):
         if self.thumbnail_url is None:
             return None

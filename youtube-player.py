@@ -344,16 +344,17 @@ class YouTubePlayer(cream.Module):
 
         search_result = self.youtube.search(search_string, sort_by)
 
+        _escape_regex = re.compile(r'(?P<amp>&)(?P<stuff>\w*[^;\w])')
+        def escape_markup(s):
+            def replace_func(match):
+                return '&amp;' + match.group('stuff')
+            return _escape_regex.sub(replace_func, s)
+
         for video in search_result:
             self.videos[video.video_id] = video
 
-            exp = re.compile(r'(?P<amp>&)(?P<stuff>\w*[^;\w])')
-
-            def repl(m):
-                return '&amp;' + m.group('stuff')
-
-            title = exp.sub(repl, video.title)
-            description = exp.sub(repl, video.description)
+            title = escape_markup(video.title)
+            description = '' if video.description is None else escape_markup(video.description)
 
             info = "<b>{0}</b>\n{1}\n{2}".format(title, description, convert_ns(int(video.duration) * 1000000000))
             thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
@@ -363,19 +364,19 @@ class YouTubePlayer(cream.Module):
 
         for column, row in enumerate(self.liststore):
             video = self.videos[row[0]]
-            self._request_video_info(video)
-            try:
-                video_thumbnail = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path)
-            except RuntimeError:
-                video_thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO)
-            row[2] = video_thumbnail.scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+            thumbnail = None
+            if self._request_video_info(video):
+                thumbnail = video.download_thumbnail()
+            row[2] = gtk.gdk.pixbuf_new_from_file(thumbnail or PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
 
     def _request_video_info(self, video):
         try:
             video.request_video_info()
+            return True
         except youtube.YouTubeError:
             self.liststore.set_value(video._tree_iter, 3, False)
+            return False
 
 
     def update_progressbar(self):
