@@ -8,7 +8,7 @@ import gst
 import cream
 import cream.gui
 
-from youtube import API as YouTubeAPI, RESOLUTIONS, RELEVANCE, PUBLISHED
+import youtube
 from throbber import Throbber
 
 gtk.gdk.threads_init()
@@ -149,13 +149,13 @@ class YouTubePlayer(cream.Module):
         self.treeview.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
 
         # Prefill the resolution combo box:
-        for index, resolution in enumerate(RESOLUTIONS.iterkeys()):
+        for index, resolution in enumerate(youtube.RESOLUTIONS.itervalues()):
             self.resolutions_store.append((resolution,))
             if resolution == self.config.preferred_resolution:
                 self.resolution_chooser.set_active(index)
 
         # Connect to YouTube:
-        self.youtube = YouTubeAPI(YOUTUBE_DEVELOPER_KEY)
+        self.youtube = youtube.API(YOUTUBE_DEVELOPER_KEY)
 
         # Initialize GStreamer stuff:
         self.player = gst.Pipeline("player")
@@ -296,17 +296,15 @@ class YouTubePlayer(cream.Module):
 
     def search(self, search_string):
 
-        sort_by = RELEVANCE
-        if self.sort_by_relevance.get_active():
-            sort_by = RELEVANCE
-        elif self.sort_by_published.get_active():
-            sort_by = PUBLISHED
+        sort_by = youtube.SORT_BY_RELEVANCE
+        if self.sort_by_published.get_active():
+            sort_by = youtube.SORT_BY_PUBLISHED
 
         self.liststore.clear()
         thread.start_new_thread(self._search, (search_string, sort_by))
 
 
-    def _search(self, search_string, sort_by=RELEVANCE):
+    def _search(self, search_string, sort_by=youtube.SORT_BY_RELEVANCE):
 
         search_result = self.youtube.search(search_string, sort_by)
 
@@ -316,18 +314,21 @@ class YouTubePlayer(cream.Module):
             info = "<b>{0}</b>\n{1}\n{2}".format(video.title, video.description, convert_ns(int(video.duration) * 1000000000))
             thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
-            gtk.gdk.threads_enter()
-            self.liststore.append((
-                video.video_id,
-                info,
-                thumbnail
-            ))
-            gtk.gdk.threads_leave()
+            with gtk.gdk.lock:
+                self.liststore.append((video.video_id, info, thumbnail))
 
         for column, row in enumerate(self.liststore):
             video = self.videos[row[0]]
+            self._request_video_info(video)
             video_thumbnail = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or PLAYER_LOGO)
             row[2] = video_thumbnail.scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+
+    def _request_video_info(self, video):
+        try:
+            video.request_video_info()
+        except youtube.YouTubeError:
+            raise
+            # TODO: ausgrau()
 
 
     def update_progressbar(self):
@@ -339,9 +340,8 @@ class YouTubePlayer(cream.Module):
             # Query failed; currently no video playing
             return True
 
-        gtk.gdk.threads_enter()
-        self.update_position(duration_ns, position_ns)
-        gtk.gdk.threads_leave()
+        with gtk.gdk.lock:
+            self.update_position(duration_ns, position_ns)
 
         return True
 
@@ -433,10 +433,12 @@ class YouTubePlayer(cream.Module):
         self.info_label_title.set_text(video.title)
         self.info_label_description.set_text(video.description)
 
-        video_url = video.get_video_url(
-            resolution=self.config.preferred_resolution,
-            fallback_to_lower_resolution=True
-        )
+        self._request_video_info(video)
+        try:
+            video_url = video.stream_urls[self.config.preferred_resolution]
+        except KeyError:
+            # fallback: use the highest possible resolution
+            video_url = video.stream_urls[video.stream_urls.keys()[0]]
         self.playbin.set_property('uri', video_url)
         self._current_video_id = id
 
@@ -473,15 +475,12 @@ class YouTubePlayer(cream.Module):
         message_name = message.structure.get_name()
 
         if message_name == "prepare-xwindow-id":
-            gtk.gdk.threads_enter()
+            with gtk.gdk.lock:
+                self.video_area.show()
 
-            self.video_area.show()
-
-            imagesink = message.src
-            imagesink.set_property("force-aspect-ratio", True)
-            imagesink.set_xwindow_id(self.video_area.window.xid)
-
-            gtk.gdk.threads_leave()
+                imagesink = message.src
+                imagesink.set_property("force-aspect-ratio", True)
+                imagesink.set_xwindow_id(self.video_area.window.xid)
 
 
 if __name__ == '__main__':

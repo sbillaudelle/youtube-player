@@ -16,16 +16,17 @@ VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}' \
 RESOLUTIONS = ordereddict((
     (37, '1080p'),
     (22, '720p'),
+    (35, '480p'),
     (34, '480p'),
     (18, '360p'),
     (5,  'FLV1')
 ))
 
 # Ordering options
-RELEVANCE  = 'relevance'
-VIEW_COUNT = 'viewCount'
-PUBLISHED  = 'published'
-RATING     = 'rating'
+SORT_BY_RELEVANCE  = 'relevance'
+SORT_BY_VIEW_COUNT = 'viewCount'
+SORT_BY_PUBLISHED  = 'published'
+SORT_BY_RATING     = 'rating'
 
 RESOLUTION_WARNING = """Found unknown resolution with id {resolution_id}.
 Please file a bug at http://github.com/sbillaudelle/youtube-player/issues
@@ -35,17 +36,25 @@ Thank you!"""
 
 
 
-def _VideoInfoProperty(video_info_key, index=0, allow_none=False, type=None):
-    def getter(self):
+class _VideoInfoProperty(property):
+    def __init__(self, video_info_key, value_index=0, allow_none=False, type=None):
+        self.key = video_info_key
+        self.value_index = value_index
+        self.allow_none = allow_none
+        self.conversion_func = type or (lambda x:x)
+        property.__init__(self, fget=self._fget)
+
+    def _fget(self, obj):
         try:
-            var = self._video_info[video_info_key][index]
+            var = obj.video_info[self.key][self.value_index]
         except KeyError:
-            if not allow_none:
+            if not self.allow_none:
                 raise
         else:
-            if type is not None:
-                return type(var)
-    return getter
+            return self.conversion_func(var)
+
+class YouTubeError(Exception):
+    pass
 
 class Video(object):
     """ Represents a YouTube video. """
@@ -67,27 +76,44 @@ class Video(object):
             category    = feed_entry.media.category[0].text,
             tags        = feed_entry.media.keywords.text,
             uri         = feed_entry.media.player.url,
-            duration    = feed_entry.media.duration.seconds,
+            duration    = int(feed_entry.media.duration.seconds),
             view_count  = feed_entry.statistics and feed_entry.statistics.view_count,
-            rating      = feed_entry.rating and feed_entry.rating.average,
+            rating      = feed_entry.rating and float(feed_entry.rating.average) or None,
             video_id    = feed_entry.id.text.split('/')[-1]
         )
 
-    thumbnail_url   = _VideoInfoProperty('thumbnail_url')
-    rating          = _VideoInfoProperty('avg_rating', type=float)
+    thumbnail_url   = _VideoInfoProperty('thumbnail_url', allow_none=True)
     datetime        = _VideoInfoProperty('timestamp', type=datetime.fromtimestamp)
 
 
-    @cached_property
-    def _video_info(self):
-        return urlparse.parse_qs(
+    def request_video_info(self):
+        if hasattr(self, '_video_info'):
+            # All work already done, do nothing.
+            return
+        info = urlparse.parse_qs(
             urllib.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
         )
+        if info['status'][0] != 'ok':
+            raise YouTubeError("Could not get video information about video "
+                               "'{video_id}' ('{video_title}'): {reason}".format(
+                                   video_id=self.video_id,
+                                   video_title=self.title,
+                                   reason=info['reason'][0]))
+        else:
+            self._video_info = info
+
+    @property
+    def video_info(self):
+        try:
+            return self._video_info
+        except AttributeError:
+            raise RuntimeError("Cannot access 'video_info': Make sure to request "
+                               "it using 'request_video_info' first.")
 
     @cached_property
     def stream_urls(self):
         urls = dict()
-        for item in self._video_info['fmt_stream_map']:
+        for item in self.video_info['fmt_url_map'][0].split(','):
             resolution_id, stream_url = item.split('|')
             resolution_id = int(resolution_id)
             try:
@@ -97,6 +123,11 @@ class Video(object):
             else:
                 urls[resolution_name] = self._cleanup_stream_url(stream_url)
         return urls
+
+    def _cleanup_stream_url(self, url):
+        # TODO: Remove all unnecessary information from the URL
+        # to protect the user's privacy as good as possible.
+        return url
 
     def _warn_unknown_resolution(self, resolution_id):
         print RESOLUTION_WARNING.format(resolution_id=resolution_id,
@@ -122,7 +153,7 @@ class API(object):
         self.service.developer_key = developer_key
 
 
-    def search(self, search_string, order_by=RELEVANCE):
+    def search(self, search_string, order_by=SORT_BY_RELEVANCE):
 
         query = gdata.youtube.service.YouTubeVideoQuery()
         query.vq = search_string
