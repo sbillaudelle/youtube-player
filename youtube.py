@@ -8,8 +8,6 @@ from cream.util import cached_property
 from cream.util.dicts import ordereddict
 
 
-GET_VIDEO_URL = 'http://www.youtube.com/get_video?video_id={video_id}&t={token}' \
-                '&eurl=&el=embedded&ps=default&fmt={resolution_code}'
 VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}' \
                  '&el=embedded&ps=default&eurl='
 
