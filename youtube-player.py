@@ -108,7 +108,7 @@ class Slider(gtk.Viewport):
         end_position = widget.get_allocation().x
 
         if start_position != end_position:
-            t = Timeline(500, CURVE_SINE)
+            t = cream.gui.Timeline(500, cream.gui.CURVE_SINE)
             t.connect('update', update)
             t.run()
 
@@ -130,6 +130,8 @@ class Slider(gtk.Viewport):
         self.layout.pack_start(widget, True, True, 0)
 
 
+
+
 class YouTubePlayer(object):
     state = STATE_NULL
     fullscreen = False
@@ -137,6 +139,9 @@ class YouTubePlayer(object):
     _current_video_id = None
 
     def __init__(self):
+
+        self._main_thread_id = thread.get_ident()
+        self._slide_to_info_timeout = None
 
         self._main_thread_id = thread.get_ident()
         self._slide_to_info_timeout = None
@@ -361,7 +366,7 @@ class YouTubePlayer(object):
             thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
             with gtk.gdk.lock:
-                self.liststore.append((video.video_id, info, thumbnail))
+                video._tree_iter = self.liststore.append((video.video_id, info, thumbnail, True))
 
         for column, row in enumerate(self.liststore):
             video = self.videos[row[0]]
@@ -369,12 +374,12 @@ class YouTubePlayer(object):
             video_thumbnail = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or PLAYER_LOGO)
             row[2] = video_thumbnail.scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
+
     def _request_video_info(self, video):
         try:
             video.request_video_info()
         except youtube.YouTubeError:
-            raise
-            # TODO: ausgrau()
+            self.liststore.set_value(video._tree_iter, 3, False)
 
 
     def update_progressbar(self):
