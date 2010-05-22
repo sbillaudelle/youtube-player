@@ -24,7 +24,7 @@ class YouTubePlayerTestCase(unittest.TestCase):
 
     def test_from_feed(self):
         video = self.get_some_video()
-        for attr, expected_type in (('published', datetime.datetime),
+        for attr, expected_type in (('datetime', datetime.datetime),
                                     ('tags', list),
                                     ('duration', int),
                                     ('view_count', int),
