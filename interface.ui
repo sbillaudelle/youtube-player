@@ -261,7 +261,10 @@
               <object class="GtkLabel" id="info_label_title">
                 <property name="visible">True</property>
                 <property name="xalign">0</property>
+                <property name="xpad">3</property>
+                <property name="ypad">3</property>
                 <property name="label" translatable="yes">label</property>
+                <property name="ellipsize">end</property>
                 <attributes>
                   <attribute name="weight" value="bold"/>
                 </attributes>
@@ -276,6 +279,8 @@
               <object class="GtkLabel" id="info_label_description">
                 <property name="visible">True</property>
                 <property name="xalign">0</property>
+                <property name="xpad">3</property>
+                <property name="ypad">3</property>
                 <property name="label" translatable="yes">...</property>
                 <property name="wrap">True</property>
               </object>

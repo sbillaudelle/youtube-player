@@ -40,6 +40,7 @@ class Slider(gtk.Viewport):
     def __init__(self):
 
         self.active_widget = None
+        self._size_cache = None
 
         gtk.Viewport.__init__(self)
         self.set_shadow_type(gtk.SHADOW_NONE)
@@ -76,12 +77,14 @@ class Slider(gtk.Viewport):
 
     def size_allocate_cb(self, source, allocation):
 
-        width = (len(self.layout.get_children()) or 1) * allocation.width
-        self.content.set_size_request(width, allocation.height)
-
-        if self.active_widget:
+        if self._size_cache != allocation and self.active_widget:
             adjustment = self.get_hadjustment()
             adjustment.set_value(self.active_widget.get_allocation().x)
+
+        self._size_cache = allocation
+
+        width = (len(self.layout.get_children()) or 1) * allocation.width
+        self.content.set_size_request(width, allocation.height)
 
 
     def append(self, widget):
@@ -162,6 +165,8 @@ class YouTubePlayer(cream.Module):
 
         self.playbin = gst.element_factory_make("playbin2", "playbin")
         self.video_sink = gst.element_factory_make("xvimagesink", "vsink")
+        self.playbin.set_property('suburi', 'file:///home/stein/Labs/Experiments/Subtitles/foo.srt')
+        self.playbin.set_property('subtitle-font-desc', 'Sans 14')
         self.playbin.set_property('video-sink', self.video_sink)
         self.playbin.set_property('buffer-duration', 3000000000)
         self.playbin.set_property('buffer-size', 2000000000)
@@ -177,20 +182,25 @@ class YouTubePlayer(cream.Module):
 
         self.window.show_all()
 
-        gobject.timeout_add(1000, self.update_progressbar)
+        gobject.timeout_add(200, self.update_progressbar)
+
+
+    def remove_slide_to_info_timeout(self):
+
+        if self._slide_to_info_timeout:
+            gobject.source_remove(self._slide_to_info_timeout)
 
 
     def extend_slide_to_info_timeout(self):
 
         if self._slide_to_info_timeout:
-            gobject.source_remove(self._slide_to_info_timeout)
+            self.remove_slide_to_info_timeout()
             self._slide_to_info_timeout = gobject.timeout_add(5000, lambda *args: self.slider.slide_to(self.info_box))
 
 
     def back_to_search_button_clicked_cb(self, source):
 
-        if self._slide_to_info_timeout:
-            gobject.source_remove(self._slide_to_info_timeout)
+        self.remove_slide_to_info_timeout()
 
         self.slider.slide_to(self.search_box)
         self._slide_to_info_timeout = gobject.timeout_add(5000, lambda: self.slider.slide_to(self.info_box))
@@ -451,6 +461,8 @@ class YouTubePlayer(cream.Module):
         type = message.type
 
         if type == gst.MESSAGE_EOS:
+            self.remove_slide_to_info_timeout()
+            self.slider.slide_to(self.search_box)
             self.set_state(STATE_NULL)
         elif type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
