@@ -1,7 +1,7 @@
 import re
 import urllib
 import urlparse
-from datetime import datetime
+import datetime
 import gdata.youtube
 import gdata.youtube.service
 from cream.util import cached_property
@@ -35,6 +35,8 @@ or send a mail to cream@cream-project.org" including the following information:
 Thank you!"""
 
 
+def datetime_from_timestamp(timestamp_as_string):
+    return datetime.datetime.fromtimestamp(int(timestamp_as_string))
 
 class _VideoInfoProperty(property):
     def __init__(self, video_info_key, value_index=0, allow_none=False, type=None):
@@ -69,21 +71,24 @@ class Video(object):
     @classmethod
     def from_feed_entry(cls, feed_entry):
         """ Creates a new instance from a ``gdata.youtube.YouTubeVideoEntry``. """
+        def _published_to_datetime(s):
+            return datetime.datetime.strptime(s, '%Y-%m-%dT%H:%M:%S.000Z')
+
         return cls(
             title       = feed_entry.media.title.text,
-            published   = feed_entry.published.text,
+            published   = _published_to_datetime(feed_entry.published.text),
             description = feed_entry.media.description.text,
             category    = feed_entry.media.category[0].text,
-            tags        = feed_entry.media.keywords.text,
+            tags        = map(str.strip, feed_entry.media.keywords.text.split(',')),
             uri         = feed_entry.media.player.url,
             duration    = int(feed_entry.media.duration.seconds),
-            view_count  = feed_entry.statistics and feed_entry.statistics.view_count,
+            view_count  = feed_entry.statistics and int(feed_entry.statistics.view_count) or None,
             rating      = feed_entry.rating and float(feed_entry.rating.average) or None,
             video_id    = feed_entry.id.text.split('/')[-1]
         )
 
     thumbnail_url   = _VideoInfoProperty('thumbnail_url', allow_none=True)
-    datetime        = _VideoInfoProperty('timestamp', type=datetime.fromtimestamp)
+    datetime        = _VideoInfoProperty('timestamp', type=datetime_from_timestamp)
 
 
     def request_video_info(self):
