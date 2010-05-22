@@ -50,6 +50,10 @@ class Throbber(gtk.Widget):
 
     def _draw(self):
 
+        style = self.get_style()
+        background = style.dark[gtk.STATE_NORMAL]
+        border = style.dark[gtk.STATE_NORMAL]
+
         width = self.allocation.width
         height = self.allocation.height
 
@@ -61,10 +65,17 @@ class Throbber(gtk.Widget):
         ctx.translate(self.allocation.x, self.allocation.y)
         ctx.set_line_width(1)
 
-        ctx.set_source_rgba(0, 0, 0, .2)
+        ctx.set_source_rgba(background.red / 65535.0, background.green / 65535.0, background.blue / 65535.0, .5)
         ctx.arc(.5 * width, .5 * height, .45 * factor, -.5 * math.pi, (-.5 + 2 * self.progress) * math.pi)
         ctx.line_to(.5 * width, .5 * height)
         ctx.close_path()
         ctx.fill_preserve()
-        ctx.set_source_rgba(0, 0, 0, .4)
+        ctx.set_source_rgba(border.red / 65535.0, border.green / 65535.0, border.blue / 65535.0, 1)
         ctx.stroke()
+
+
+if __name__ == '__main__':
+    win = gtk.Window()
+    win.add(Throbber())
+    win.show_all()
+    gtk.main()
