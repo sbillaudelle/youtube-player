@@ -5,6 +5,8 @@ import gobject
 import gtk
 import gst
 
+import re
+
 import cream
 import cream.gui
 
@@ -189,6 +191,7 @@ class YouTubePlayer(cream.Module):
 
         if self._slide_to_info_timeout:
             gobject.source_remove(self._slide_to_info_timeout)
+            self._slide_to_info_timeout = None
 
 
     def extend_slide_to_info_timeout(self):
@@ -321,7 +324,15 @@ class YouTubePlayer(cream.Module):
         for video in search_result:
             self.videos[video.video_id] = video
 
-            info = "<b>{0}</b>\n{1}\n{2}".format(video.title, video.description, convert_ns(int(video.duration) * 1000000000))
+            exp = re.compile(r'(?P<amp>&)(?P<stuff>\w*[^;\w])')
+
+            def repl(m):
+                return '&amp;' + m.group('stuff')
+
+            title = exp.sub(repl, video.title)
+            description = exp.sub(repl, video.description)
+
+            info = "<b>{0}</b>\n{1}\n{2}".format(title, description, convert_ns(int(video.duration) * 1000000000))
             thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
             with gtk.gdk.lock:
@@ -330,7 +341,10 @@ class YouTubePlayer(cream.Module):
         for column, row in enumerate(self.liststore):
             video = self.videos[row[0]]
             self._request_video_info(video)
-            video_thumbnail = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path or PLAYER_LOGO)
+            try:
+                video_thumbnail = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path)
+            except RuntimeError:
+                video_thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO)
             row[2] = video_thumbnail.scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
 

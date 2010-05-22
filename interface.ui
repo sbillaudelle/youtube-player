@@ -235,6 +235,7 @@
                       <attributes>
                         <attribute name="sensitive">3</attribute>
                         <attribute name="markup">1</attribute>
+                        <attribute name="text">1</attribute>
                       </attributes>
                     </child>
                   </object>
