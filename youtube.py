@@ -1,13 +1,17 @@
 import re
-import urllib
+import urllib2
 import urlparse
 import datetime
+from lxml.etree import parse as parse_xml
+
 import gdata.youtube
 import gdata.youtube.service
 from utils import cached_property, ordereddict
 
 
-VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}'
+VIDEO_INFO_URL      = 'http://www.youtube.com/get_video_info?video_id={video_id}'
+SUBTITLE_LIST_URL   = 'http://video.google.com/timedtext?tlangs=1&type=list&v={video_id}'
+SUBTITLE_GET_URL    = 'http://video.google.com/timedtext?type=track&v={video_id}&lang={language_code}'
 
 RESOLUTION_WARNING = """Found unknown resolution with id {resolution_id}.
 Please file a bug at http://github.com/sbillaudelle/youtube-player/issues
@@ -136,6 +140,7 @@ class Video(object):
     #: URL to the video's thumbnail
     #: (``request_video_info`` has to be called before accessing this property``)
     thumbnail_url   = _VideoInfoProperty('thumbnail_url', allow_none=True)
+    has_subtitles   = _VideoInfoProperty('has_cc', type=bool)
 
 
     def request_video_info(self):
@@ -150,7 +155,7 @@ class Video(object):
             # All work already done, do nothing.
             return
         info = urlparse.parse_qs(
-            urllib.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
+            urllib2.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
         )
         if info['status'][0] != 'ok':
             try:
@@ -168,7 +173,7 @@ class Video(object):
     @property
     def video_info(self):
         """
-        A dictionary containing addtional video meta data.
+        A dictionary containing additional video meta data.
 
         Has to be requested from YouTube using ``request_video_info`` or a
         ``RuntimeError`` will be raised when trying to access this property.
@@ -199,30 +204,87 @@ class Video(object):
                 urls[resolution_name] = self._cleanup_stream_url(stream_url)
         return urls
 
-    def _cleanup_stream_url(self, url):
-        # TODO: Remove all unnecessary information from the URL
-        # to protect the user's privacy as good as possible.
+    @staticmethod
+    def _cleanup_stream_url(url):
+        """
+        Removes all unnecessary information from the given stream ``url``
+        to protect the user's privacy as good as possible.
+        """
+        regex_substitutions = (
+            ('ip=\d+\.\d+\.\d+\.\d+', 'ip=0.0.0.0'),
+            ('ipbits=\d+', 'ipbits=0')
+        )
+        for pattern, replace in regex_substitutions:
+            url = re.sub(pattern, replace, url)
         return url
+
 
     def _warn_unknown_resolution(self, resolution_id):
         print RESOLUTION_WARNING.format(resolution_id=resolution_id,
                                         video_id=self.video_id)
 
     @cached_property
-    def thumbnail_path(self):
+    def download_thumbnail(self):
         """
         Downloads the video thumbnail to the tempfile directory and returns
         its full, absolute file path.
 
         (``request_video_info`` has to be called before accessing this property)
         """
+        return self._thumbnail_path
+
+    def _thumbnail_path(self):
         if self.thumbnail_url is None:
             return None
         from tempfile import mkstemp
         file_fd, file_name = mkstemp()
         with open(file_name, 'w') as temp_file:
-            temp_file.write(urllib.urlopen(self.thumbnail_url).read())
+            temp_file.write(urllib2.urlopen(self.thumbnail_url).read())
         return file_name
+
+    def request_subtitle_list(self):
+        if hasattr(self, '_subtitle_list'):
+            # All work is done, do nothing.
+            return self._subtitle_list
+
+        self._subtitle_list = dict()
+        self._subtitles = dict()
+        xml = parse_xml(SUBTITLE_LIST_URL.format(video_id=self.video_id))
+        # TODO: The request response may be empty, return an empty
+        # list in that case
+        for child in xml.getroot():
+            self._subtitle_list[child.attrib['lang_code']] = child.attrib
+
+    @property
+    def subtitle_list(self):
+        """
+        A dictionary containing information about all subtitles available
+        for this video.
+
+        Has to be requested from YouTube using ``request_subtitle_list`` or a
+        ``RuntimeError`` will be raised when trying to access this property.
+        """
+        try:
+            return self._subtitle_list
+        except AttributeError:
+            raise RuntimeError("Cannot access 'subtitle_list': Make sure to request "
+                               "it using 'request_subtitle_list' first.")
+
+    def download_subtitle(self, language):
+        """
+        Downloads the subtitle for ``language`` where ``language`` is
+        a language code of 2 chars, for example *en*.
+
+        Returns TODO: specify format
+        """
+        if language in self._subtitles:
+            # All work done, just returned the cached subtitles.
+            return self._subtitles[language]
+        # TODO: what happens if the subtitle is not available?
+        xml = parse_xml(SUBTITLE_GET_URL.format(video_id=self.video_id,
+                                                language_code=language))
+        # TODO
+        # return tha_subtitle
 
 
 class API(object):
