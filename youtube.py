@@ -35,10 +35,6 @@ RESOLUTIONS = ordereddict((
 ))
 
 
-def datetime_from_timestamp(timestamp_as_string):
-    """ Like ``datetime.datetime.fromtimestamp``, but expects a ``str``. """
-    return datetime.datetime.fromtimestamp(int(timestamp_as_string))
-
 class YouTubeError(Exception):
     pass
 
