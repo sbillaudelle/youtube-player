@@ -2,12 +2,16 @@
 import thread
 import math
 import re
+import tempfile
 import gobject
 import gtk
 import gst
 
 import youtube
 from throbber import Throbber
+from buffer import Buffer
+
+from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING
 
 gtk.gdk.threads_init()
 
@@ -15,11 +19,6 @@ YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvq
 
 PLAYER_LOGO = 'youtube-player.svg'
 ICON_SIZE = 64
-
-STATE_NULL = 0
-STATE_PAUSED = 1
-STATE_PLAYING = 2
-STATE_BUFFERING = 3
 
 
 def convert_ns(t):
@@ -158,7 +157,7 @@ class YouTubePlayer(object):
                     'cellrenderer_info', 'cellrenderer_thumbnail', 'sort_by_menu',
                     'sort_by_relevance', 'sort_by_published',
                     'info_box', 'search_box', 'back_to_search_button', 'sidebar',
-                    'info_label_title', 'info_label_description'):
+                    'info_label_title', 'info_label_description', 'progress_scale'):
             setattr(self, obj, self.interface.get_object(obj))
 
         self.throbber = Throbber()
@@ -188,6 +187,7 @@ class YouTubePlayer(object):
         self.sort_by_menu.connect('selection-done', self.search_cb)
         self.back_to_search_button.connect('clicked', self.back_to_search_button_clicked_cb)
         self.info_label_description.connect('size-allocate', lambda source, allocation: source.set_size_request(allocation.width - 2, -1))
+        self.progress_scale.connect('change-value', self.seek_cb)
 
         self.search_entry.connect('changed', lambda *args: self.extend_slide_to_info_timeout())
         self.search_entry.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
@@ -202,6 +202,10 @@ class YouTubePlayer(object):
         # Connect to YouTube:
         self.youtube = youtube.API(YOUTUBE_DEVELOPER_KEY)
 
+
+        self.buffer = Buffer()
+        self.buffer.connect('update', self.buffer_update_cb)
+
         # Initialize GStreamer stuff:
         self.player = gst.Pipeline("player")
 
@@ -210,7 +214,7 @@ class YouTubePlayer(object):
         self.playbin.set_property('suburi', 'file:///home/stein/Labs/Experiments/Subtitles/foo.srt')
         self.playbin.set_property('subtitle-font-desc', 'Sans 14')
         self.playbin.set_property('video-sink', self.video_sink)
-        self.playbin.set_property('buffer-duration', 3000000000)
+        self.playbin.set_property('buffer-duration', 10000000000)
         self.playbin.set_property('buffer-size', 2000000000)
         self.player.add(self.playbin)
 
@@ -225,6 +229,25 @@ class YouTubePlayer(object):
         self.window.show_all()
 
         gobject.timeout_add(200, self.update_progressbar)
+
+
+    def buffer_update_cb(self, source, position):
+
+        self.progress_scale.set_fill_level(position)
+
+        if position >= 10 and self.state == STATE_BUFFERING:
+            print "PLAY"
+            self.set_state(STATE_PLAYING)
+
+
+    def seek_cb(self, source, scroll, value):
+
+        try:
+            duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
+        except:
+            duration_ns = 0
+
+        self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, (duration_ns / 100.0) * value)
 
 
     def remove_slide_to_info_timeout(self):
@@ -361,16 +384,17 @@ class YouTubePlayer(object):
 
         search_result = self.youtube.search(search_string, sort_by)
 
+        _escape_regex = re.compile(r'(?P<amp>&)(?P<stuff>\w*[^;\w])')
+        def escape_markup(s):
+            def replace_func(match):
+                return '&amp;' + match.group('stuff')
+            return _escape_regex.sub(replace_func, s)
+
         for video in search_result:
             self.videos[video.video_id] = video
 
-            exp = re.compile(r'(?P<amp>&)(?P<stuff>\w*[^;\w])')
-
-            def repl(m):
-                return '&amp;' + m.group('stuff')
-
-            title = exp.sub(repl, video.title)
-            description = exp.sub(repl, video.description)
+            title = escape_markup(video.title)
+            description = '' if video.description is None else escape_markup(video.description)
 
             info = "<b>{0}</b>\n{1}\n{2}".format(title, description, convert_ns(int(video.duration) * 1000000000))
             thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
@@ -380,19 +404,19 @@ class YouTubePlayer(object):
 
         for column, row in enumerate(self.liststore):
             video = self.videos[row[0]]
-            self._request_video_info(video)
-            try:
-                video_thumbnail = gtk.gdk.pixbuf_new_from_file(video.thumbnail_path)
-            except RuntimeError:
-                video_thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO)
-            row[2] = video_thumbnail.scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+            thumbnail = None
+            if self._request_video_info(video):
+                thumbnail = video.download_thumbnail()
+            row[2] = gtk.gdk.pixbuf_new_from_file(thumbnail or PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
 
     def _request_video_info(self, video):
         try:
             video.request_video_info()
+            return True
         except youtube.YouTubeError:
             self.liststore.set_value(video._tree_iter, 3, False)
+            return False
 
 
     def update_progressbar(self):
@@ -445,6 +469,11 @@ class YouTubePlayer(object):
                 self.control_area.add(self.play_pause_button)
             self.play_pause_button.set_sensitive(True)
             self.threads_leave()
+
+        if state != STATE_NULL:
+            self.buffer.set_state(STATE_PLAYING)
+        else:
+            self.buffer.set_state(STATE_NULL)
 
         if state == STATE_NULL:
             self.player.set_state(gst.STATE_NULL)
@@ -503,11 +532,17 @@ class YouTubePlayer(object):
         except KeyError:
             # fallback: use the highest possible resolution
             video_url = video.stream_urls[video.stream_urls.keys()[0]]
-        self.playbin.set_property('uri', video_url)
+
+        tmp_video_url = self.buffer.load(video_url)
+
+        self.playbin.set_property('uri', 'file://{0}'.format(tmp_video_url))
         self._current_video_id = id
 
-        if play:
-            self.set_state(STATE_PLAYING)
+        self.buffer.set_state(STATE_PLAYING)
+        self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
+
+        #if play:
+        #    self.set_state(STATE_BUFFERING)
 
 
     def on_message(self, bus, message):
@@ -518,19 +553,11 @@ class YouTubePlayer(object):
             self.remove_slide_to_info_timeout()
             self.slider.slide_to(self.search_box)
             self.set_state(STATE_NULL)
+            self.buffer.flush()
         elif type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
             print "Error: %s" % err, debug
             self.player.set_state(gst.STATE_NULL)
-        elif type == gst.MESSAGE_BUFFERING:
-            state = message.parse_buffering()
-            self.throbber.set_progress(state / 100.0)
-            if state < 100:
-                if self.state == STATE_PLAYING:
-                    self.set_state(STATE_BUFFERING)
-            else:
-                if self.state == STATE_BUFFERING:
-                    self.set_state(STATE_PLAYING)
 
 
     def on_sync_message(self, bus, message):
