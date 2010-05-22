@@ -40,6 +40,7 @@ class Slider(gtk.Viewport):
     def __init__(self):
 
         self.active_widget = None
+        self._size_cache = None
 
         gtk.Viewport.__init__(self)
         self.set_shadow_type(gtk.SHADOW_NONE)
@@ -76,12 +77,14 @@ class Slider(gtk.Viewport):
 
     def size_allocate_cb(self, source, allocation):
 
-        width = (len(self.layout.get_children()) or 1) * allocation.width
-        self.content.set_size_request(width, allocation.height)
-
-        if self.active_widget and (self.get_allocation() != allocation):
+        if self._size_cache != allocation and self.active_widget:
             adjustment = self.get_hadjustment()
             adjustment.set_value(self.active_widget.get_allocation().x)
+
+        self._size_cache = allocation
+
+        width = (len(self.layout.get_children()) or 1) * allocation.width
+        self.content.set_size_request(width, allocation.height)
 
 
     def append(self, widget):
