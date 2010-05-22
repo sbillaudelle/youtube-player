@@ -1,17 +1,29 @@
 import re
 import urllib
 import urlparse
-from datetime import datetime
+import datetime
 import gdata.youtube
 import gdata.youtube.service
 from utils import cached_property, ordereddict
 
 
-HTTP_FOUND = 200
 GET_VIDEO_URL = 'http://www.youtube.com/get_video?video_id={video_id}&t={token}' \
                 '&eurl=&el=embedded&ps=default&fmt={resolution_code}'
 VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}' \
                  '&el=embedded&ps=default&eurl='
+
+RESOLUTION_WARNING = """Found unknown resolution with id {resolution_id}.
+Please file a bug at http://github.com/sbillaudelle/youtube-player/issues
+or send a mail to cream@cream-project.org" including the following information:
+    Video-ID: {video_id}
+Thank you!"""
+
+# Ordering options
+SORT_BY_RELEVANCE  = 'relevance'
+SORT_BY_VIEW_COUNT = 'viewCount'
+SORT_BY_PUBLISHED  = 'published'
+SORT_BY_RATING     = 'rating'
+
 RESOLUTIONS = ordereddict((
     (37, '1080p'),
     (22, '720p'),
@@ -21,42 +33,69 @@ RESOLUTIONS = ordereddict((
     (5,  'FLV1')
 ))
 
-# Ordering options
-SORT_BY_RELEVANCE  = 'relevance'
-SORT_BY_VIEW_COUNT = 'viewCount'
-SORT_BY_PUBLISHED  = 'published'
-SORT_BY_RATING     = 'rating'
 
-RESOLUTION_WARNING = """Found unknown resolution with id {resolution_id}.
-Please file a bug at http://github.com/sbillaudelle/youtube-player/issues
-or send a mail to cream@cream-project.org" including the following information:
-    Video-ID: {video_id}
-Thank you!"""
+def datetime_from_timestamp(timestamp_as_string):
+    """ Like ``datetime.datetime.fromtimestamp``, but expects a ``str``. """
+    return datetime.datetime.fromtimestamp(int(timestamp_as_string))
 
-
+class YouTubeError(Exception):
+    pass
 
 class _VideoInfoProperty(property):
-    def __init__(self, video_info_key, value_index=0, allow_none=False, type=None):
+    """
+    Property used to hide the ``Video.video_info`` dict
+    (which is not a pretty API at all).
+
+        foo = _VideoInfoProperty('blah')
+
+    could be expressed with built-in Python tools like this::
+
+        @property
+        def foo(self):
+            return self.video_info['blah']
+
+    Additionally to that basic functionality the ``_VideoInfoProperty``
+    can do some useful other stuff like automatically converting the
+    assigend value using an arbitrary conversion function (e.g., ``int``).
+
+    :param video_info_key:
+        The attribute's key in the ``Video.video_info`` dict
+        ('blah' in the example above)
+    :param allow_none:
+        Specifies whether the property's value should be ``None`` if the
+        above mentioned key isn't given in the ``Video.video_info`` dict
+        or whether an exception should be raised.
+    :param type:
+        the conversion function, e.g. ``int`` or ``float`` or whatever.
+    """
+    def __init__(self, video_info_key, allow_none=False, type=None):
         self.key = video_info_key
-        self.value_index = value_index
         self.allow_none = allow_none
         self.conversion_func = type or (lambda x:x)
         property.__init__(self, fget=self._fget)
 
     def _fget(self, obj):
         try:
-            var = obj.video_info[self.key][self.value_index]
+            var = obj.video_info[self.key][0]
         except KeyError:
             if not self.allow_none:
                 raise
         else:
             return self.conversion_func(var)
 
-class YouTubeError(Exception):
-    pass
-
 class Video(object):
-    """ Represents a YouTube video. """
+    """
+    Represents a YouTube video.
+
+    Takes arbitrary keyword arguments that end up in instance attributes of the
+    very same name::
+
+        >>> video = Video(foo=42, bar='hello world')
+        >>> video.foo
+        42
+        >>> video.bar
+        'hello world'
+    """
 
     def __init__(self, **attributes):
         for key, value in attributes.iteritems():
@@ -67,25 +106,53 @@ class Video(object):
 
     @classmethod
     def from_feed_entry(cls, feed_entry):
-        """ Creates a new instance from a ``gdata.youtube.YouTubeVideoEntry``. """
+        """
+        Creates a new instance from a ``gdata.youtube.YouTubeVideoEntry`` and
+        extracts the following information from that entry:
+
+        * *video_id* (``str``)
+        * *title* (``str``)
+        * *description* (``str``)
+        * *tags* (``list`` of ``str``)
+        * *category* (``str``)
+        * *uri* (``str``)
+        * *duration* (``int``)
+        * *view_count* (``int`` if given, else ``None``)
+        * *rating* (``float`` if given, else ``None``)
+        * *datetime* (``datetime.datetime``)
+
+        All attributes mentioned end up as instance attributes like
+        described in the documentation for ``Video``.
+        """
+        def _to_datetime(s):
+            return datetime.datetime.strptime(s, '%Y-%m-%dT%H:%M:%S.000Z')
+
         return cls(
             title       = feed_entry.media.title.text,
-            published   = feed_entry.published.text,
+            datetime    = _to_datetime(feed_entry.published.text),
             description = feed_entry.media.description.text,
             category    = feed_entry.media.category[0].text,
-            tags        = feed_entry.media.keywords.text,
+            tags        = map(str.strip, feed_entry.media.keywords.text.split(',')),
             uri         = feed_entry.media.player.url,
             duration    = int(feed_entry.media.duration.seconds),
-            view_count  = feed_entry.statistics and feed_entry.statistics.view_count,
+            view_count  = feed_entry.statistics and int(feed_entry.statistics.view_count) or None,
             rating      = feed_entry.rating and float(feed_entry.rating.average) or None,
             video_id    = feed_entry.id.text.split('/')[-1]
         )
 
+    #: URL to the video's thumbnail
+    #: (``request_video_info`` has to be called before accessing this property``)
     thumbnail_url   = _VideoInfoProperty('thumbnail_url', allow_none=True)
-    datetime        = _VideoInfoProperty('timestamp', type=datetime.fromtimestamp)
 
 
     def request_video_info(self):
+        """
+        Sends a HTTP request to the YouTube servers asking for additional
+        information about the video.
+
+        Note that this method has to be called before accessing ``video_info`` and some
+        other attributes that depend on it (like ``stream_urls`` or ``thumbnail_url``)!
+        """
         if hasattr(self, '_video_info'):
             # All work already done, do nothing.
             return
@@ -103,6 +170,12 @@ class Video(object):
 
     @property
     def video_info(self):
+        """
+        A dictionary containing addtional video meta data.
+
+        Has to be requested from YouTube using ``request_video_info`` or a
+        ``RuntimeError`` will be raised when trying to access this property.
+        """
         try:
             return self._video_info
         except AttributeError:
@@ -111,6 +184,12 @@ class Video(object):
 
     @cached_property
     def stream_urls(self):
+        """
+        A dictionary of directly streamable URLs in all resolutions that are
+        known to be available for this video.
+
+        (``request_video_info`` has to be called before accessing this property)
+        """
         urls = dict()
         for item in self.video_info['fmt_url_map'][0].split(','):
             resolution_id, stream_url = item.split('|')
@@ -134,9 +213,14 @@ class Video(object):
 
     @cached_property
     def thumbnail_path(self):
+        """
+        Downloads the video thumbnail to the tempfile directory and returns
+        its full, absolute file path.
+
+        (``request_video_info`` has to be called before accessing this property)
+        """
         if self.thumbnail_url is None:
             return None
-        import os
         from tempfile import mkstemp
         file_fd, file_name = mkstemp()
         with open(file_name, 'w') as temp_file:
