@@ -8,8 +8,7 @@ from cream.util import cached_property
 from cream.util.dicts import ordereddict
 
 
-VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}' \
-                 '&el=embedded&ps=default&eurl='
+VIDEO_INFO_URL = 'http://www.youtube.com/get_video_info?video_id={video_id}'
 
 RESOLUTION_WARNING = """Found unknown resolution with id {resolution_id}.
 Please file a bug at http://github.com/sbillaudelle/youtube-player/issues
@@ -155,10 +154,14 @@ class Video(object):
             urllib.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
         )
         if info['status'][0] != 'ok':
+            try:
+                video_title = "('" + self.title + "')"
+            except AttributeError:
+                video_title = ''
             raise YouTubeError("Could not get video information about video "
-                               "'{video_id}' ('{video_title}'): {reason}".format(
+                               "'{video_id}' {video_title}: {reason}".format(
                                    video_id=self.video_id,
-                                   video_title=self.title,
+                                   video_title=video_title,
                                    reason=info['reason'][0]))
         else:
             self._video_info = info
