@@ -234,7 +234,6 @@ class Video(object):
 
         (``request_video_info`` has to be called before accessing this property)
         """
-        print "DOWNLOAD THUMB", self._thumbnail_path
         return self._thumbnail_path
 
     @cached_property
