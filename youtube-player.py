@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 import thread
+import re
 
 import gobject
 import gtk
 import gst
-
-import tempfile
-import re
 
 import cream
 import cream.gui
@@ -18,7 +16,6 @@ from buffer import Buffer
 from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING
 from common import Lock
 
-gtk.gdk.threads_init()
 
 YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvqenE2afoyjQB276fWVx1T3qpDi7FFO6tkVs7JqqTmRRA'
 
@@ -523,5 +520,6 @@ class YouTubePlayer(cream.Module):
 
 
 if __name__ == '__main__':
+    gtk.gdk.threads_init()
     youtube_player = YouTubePlayer()
     youtube_player.main()

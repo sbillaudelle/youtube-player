@@ -1,3 +1,4 @@
+import os
 import re
 import urllib2
 import urlparse
@@ -240,11 +241,12 @@ class Video(object):
     def _thumbnail_path(self):
         if self.thumbnail_url is None:
             return None
-        from tempfile import mkstemp
-        file_fd, file_name = mkstemp()
-        with open(file_name, 'w') as temp_file:
-            temp_file.write(urllib2.urlopen(self.thumbnail_url).read())
-        return file_name
+        from common import NamedTempfile
+        with NamedTempfile('thumbnail-'+self.video_id) as tempfile:
+            if os.path.getsize(tempfile.name) == 0:
+                # download the thumbnail if not already done so.
+                tempfile.write(urllib2.urlopen(self.thumbnail_url).read())
+            return tempfile.name
 
     def request_subtitle_list(self):
         if hasattr(self, '_subtitle_list'):
