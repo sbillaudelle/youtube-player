@@ -387,13 +387,12 @@ class YouTubePlayer(cream.Module):
 
 
     def _request_video_info(self, video):
-        with self.threadlock:
-            try:
-                video.request_video_info()
-                return True
-            except youtube.YouTubeError:
-                self.liststore.set_value(video._tree_iter, 3, False)
-                return False
+        try:
+            video.request_video_info()
+            return True
+        except youtube.YouTubeError:
+            self.liststore.set_value(video._tree_iter, 3, False)
+            return False
 
 
     def update_progressbar(self):
