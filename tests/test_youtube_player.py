@@ -26,10 +26,10 @@ class YouTubePlayerTestCase(unittest.TestCase):
         video = youtube.Video(video_id=1337)
         video._warn_unknown_resolution(resolution_id=42)
 
-    def test_cleanup_stream_url(self):
-        url1 = 'http://foobar.org/?ip=42.21.11.13&ipbits=8'
-        self.assertEqual('http://foobar.org/?ip=0.0.0.0&ipbits=0',
-                         youtube.Video._cleanup_stream_url(url1))
+    #def test_cleanup_stream_url(self):
+    #    url1 = 'http://foobar.org/?ip=42.21.11.13&ipbits=8'
+    #    self.assertEqual('http://foobar.org/?ip=0.0.0.0&ipbits=0',
+    #                     youtube.Video._cleanup_stream_url(url1))
 
     def test_from_feed(self):
         video = self.get_some_video()

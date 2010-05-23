@@ -10,6 +10,7 @@ class BufferException(BaseException):
 
 
 class Buffer(gobject.GObject):
+    # TODO: One buffer for each video -- one buffer file for each video
 
     __gtype_name__ = 'Buffer'
     __gsignals__ = {
