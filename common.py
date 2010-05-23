@@ -60,8 +60,8 @@ class NamedTempfile(object):
             os.remove(self.name)
 
     # context manager support
-    def __enter__(self):
-        return self.file
+    def __enter__(self, *args, **kwargs):
+        return self.file.__enter__(*args, **kwargs)
 
-    def __exit__(self, *args):
-        return self.file.__exit__(*args)
+    def __exit__(self, *args, **kwargs):
+        return self.file.__exit__(*args, **kwargs)
