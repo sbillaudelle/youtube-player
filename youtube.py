@@ -126,12 +126,17 @@ class Video(object):
         def _to_datetime(s):
             return datetime.datetime.strptime(s, '%Y-%m-%dT%H:%M:%S.000Z')
 
+        def _split_tags(s):
+            if not s:
+                return None
+            return map(str.split, s.split(','))
+
         return cls(
             title       = feed_entry.media.title.text,
             datetime    = _to_datetime(feed_entry.published.text),
             description = feed_entry.media.description.text,
             category    = feed_entry.media.category[0].text,
-            tags        = map(str.strip, feed_entry.media.keywords.text.split(',')),
+            tags        = _split_tags(feed_entry.media.keywords.text),
             uri         = feed_entry.media.player.url,
             duration    = int(feed_entry.media.duration.seconds),
             view_count  = feed_entry.statistics and int(feed_entry.statistics.view_count) or None,
