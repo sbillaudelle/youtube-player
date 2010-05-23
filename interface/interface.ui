@@ -305,7 +305,7 @@
               </packing>
             </child>
             <child>
-              <object class="GtkCheckButton" id="checkbutton1">
+              <object class="GtkCheckButton" id="show_subtitles_btn">
                 <property name="label" translatable="yes">Show Subtitles</property>
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>

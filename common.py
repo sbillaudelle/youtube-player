@@ -43,6 +43,13 @@ class NamedTempfile(object):
             self.file.close()
             del self.file
 
+    def isempty(self):
+        return os.path.getsize(self.file.name) == 0
+
+    def delete(self):
+        self.file.close() # make sure the file is closed.
+        os.remove(self.name)
+
     def _ensure_dir_exists(self):
         if not os.path.exists(self.dir):
             os.makedirs(self.dir)
@@ -55,9 +62,7 @@ class NamedTempfile(object):
 
     def __del__(self):
         if self.auto_delete:
-            # make sure the file is closed.
-            self.file.close()
-            os.remove(self.name)
+            self.delete()
 
     # context manager support
     def __enter__(self, *args, **kwargs):

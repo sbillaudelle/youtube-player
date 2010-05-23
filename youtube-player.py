@@ -115,7 +115,7 @@ class YouTubePlayer(cream.Module):
                     'play_pause_image', 'resolution_chooser', 'resolutions_store',
                     'position_display', 'progress', 'liststore', 'treeview',
                     'cellrenderer_info', 'cellrenderer_thumbnail', 'sort_by_menu',
-                    'sort_by_relevance', 'sort_by_published',
+                    'sort_by_relevance', 'sort_by_published', 'show_subtitles_btn',
                     'info_box', 'search_box', 'back_to_search_button', 'sidebar',
                     'info_label_title', 'info_label_description', 'progress_scale'):
             setattr(self, obj, self.interface.get_object(obj))
@@ -129,29 +129,36 @@ class YouTubePlayer(cream.Module):
 
         self.sidebar.add(self.slider)
 
+        self.window.connect('destroy', lambda *args: self.quit())
+
         self.fullscreen_window.fullscreen()
-        self.video_area.set_app_paintable(True)
         self.fullscreen_video_area.set_app_paintable(True)
-        self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+        self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
+        self.fullscreen_video_area.connect('expose-event', self.expose_cb)
+
+        self.video_area.set_app_paintable(True)
         self.video_area.connect('expose-event', self.expose_cb)
-        self.fullscreen_video_area.connect('expose-event', self.expose_cb) 
+        self.video_area.connect('button-press-event', self.video_area_click_cb)
+
+        self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+        self.play_pause_button.connect('clicked', self.play_pause_cb)
+
         self.search_entry.connect('activate', self.search_cb)
         self.search_entry.connect('icon-release', lambda *args: self.sort_by_menu.popup(None, None, None, 1, 0))
-        self.play_pause_button.connect('clicked', self.play_pause_cb)
+
         self.resolution_chooser.connect('changed', self.resolution_changed_cb)
-        self.treeview.connect('row-activated', self.row_activated_cb)
-        self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
-        self.window.connect('destroy', lambda *args: self.quit())
-        self.video_area.connect('button-press-event', self.video_area_click_cb)
-        self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
         self.sort_by_menu.connect('selection-done', self.search_cb)
         self.back_to_search_button.connect('clicked', self.back_to_search_button_clicked_cb)
         self.info_label_description.connect('size-allocate', lambda source, allocation: source.set_size_request(allocation.width - 2, -1))
+        self.show_subtitles_btn.connect('activate', self.show_subtitles_changed_cb)
         self.progress_scale.connect('change-value', self.seek_cb)
 
         self.search_entry.connect('changed', lambda *args: self.extend_slide_to_info_timeout())
         self.search_entry.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
+
         self.treeview.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
+        self.treeview.connect('row-activated', self.row_activated_cb)
+        self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
 
         # Prefill the resolution combo box:
         for index, resolution in enumerate(youtube.RESOLUTIONS.itervalues()):
@@ -171,8 +178,6 @@ class YouTubePlayer(cream.Module):
 
         self.playbin = gst.element_factory_make("playbin2", "playbin")
         self.video_sink = gst.element_factory_make("xvimagesink", "vsink")
-        self.playbin.set_property('suburi', 'file:///home/stein/Labs/Experiments/Subtitles/foo.srt')
-        self.playbin.set_property('subtitle-font-desc', 'Sans 14')
         self.playbin.set_property('video-sink', self.video_sink)
         self.playbin.set_property('buffer-duration', 10000000000)
         self.playbin.set_property('buffer-size', 2000000000)
@@ -299,6 +304,17 @@ class YouTubePlayer(cream.Module):
         self.extend_slide_to_info_timeout()
 
 
+    def show_subtitles_changed_cb(self, *args):
+        print args
+        video = self.videos[self._current_video_id]
+        video.request_subtitle_list()
+        tempfile = video.download_subtitle('en', format='mpl2')
+        self.playbin.set_property('suburi', 'file:///%s' % tempfile)
+        self.playbin.set_property('subtitle-font-desc', 'Sans 14')
+
+
+
+
     def row_activated_cb(self, source, iter, path):
 
         selection = self.treeview.get_selection()
@@ -356,7 +372,7 @@ class YouTubePlayer(cream.Module):
             title = escape_markup(video.title)
             description = '' if video.description is None else escape_markup(video.description)
 
-            info = "<b>{0}</b>\n{1}\n{2}".format(title, description, convert_ns(int(video.duration) * 1000000000))
+            info = "<b>{0}</b>\n{1}\n{2}".format(title, description[:100], convert_ns(int(video.duration) * 1000000000))
             thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
             with gtk.gdk.lock:
@@ -371,12 +387,13 @@ class YouTubePlayer(cream.Module):
 
 
     def _request_video_info(self, video):
-        try:
-            video.request_video_info()
-            return True
-        except youtube.YouTubeError:
-            self.liststore.set_value(video._tree_iter, 3, False)
-            return False
+        with self.threadlock:
+            try:
+                video.request_video_info()
+                return True
+            except youtube.YouTubeError:
+                self.liststore.set_value(video._tree_iter, 3, False)
+                return False
 
 
     def update_progressbar(self):
@@ -465,11 +482,12 @@ class YouTubePlayer(cream.Module):
         self.set_state(STATE_NULL)
 
         video = self.videos[id]
+        self._request_video_info(video)
 
         self.info_label_title.set_text(video.title)
         self.info_label_description.set_text(video.description)
+        self.show_subtitles_btn.set_sensitive(video.has_subtitles)
 
-        self._request_video_info(video)
         try:
             video_url = video.stream_urls[self.config.preferred_resolution]
         except KeyError:

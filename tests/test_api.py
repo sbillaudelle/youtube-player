@@ -6,6 +6,7 @@ YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvq
 
 class YouTubePlayerTestCase(unittest.TestCase):
     _some_video = None
+    _some_video_without_subtitles = None
 
     def setUp(self):
         self.api = youtube.API(YOUTUBE_DEVELOPER_KEY)
@@ -20,6 +21,14 @@ class YouTubePlayerTestCase(unittest.TestCase):
         search_results = self.api.search('google i/o keynote full length')
         for result in search_results:
             self._some_video = result
+            return result
+
+    def get_some_video_without_subtitles(self):
+        if self._some_video_without_subtitles:
+            return self._some_video_without_subtitles
+        search_results = self.api.search('coldmirror')
+        for result in search_results:
+            self._some_video_without_subtitles = result
             return result
 
     def test_resolution_warning(self):
@@ -65,14 +74,18 @@ class YouTubePlayerTestCase(unittest.TestCase):
         self.assert_(video.subtitle_list)
         self.assert_('en' in video.subtitle_list)
 
+        video_without_subtitles = self.get_some_video_without_subtitles()
+        video_without_subtitles.request_subtitle_list()
+        self.assert_(not video_without_subtitles.subtitle_list)
+
     def test_download_subtitle(self):
         video = self.get_some_video()
         video.request_subtitle_list()
-        subtitle = video.download_subtitle('en')
-        # self.assert_(subtitle)
-        # TODO: test for format-correctness if
-        # we have chosen a format for subtitles
-
+        subtitle = video.download_subtitle('en', format='mpl2')
+        self.assert_(subtitle)
+        self.assert_(open(subtitle).read(1) == '[')
+        # TODO: that format-checking is *very* poor :-)
+        self.assertRaises(youtube.YouTubeError, video.download_subtitle, 'uu')
 
 
 if __name__ == '__main__':
