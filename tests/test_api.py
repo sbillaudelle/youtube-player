@@ -4,32 +4,27 @@ import youtube
 
 YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvqenE2afoyjQB276fWVx1T3qpDi7FFO6tkVs7JqqTmRRA'
 
-class YouTubePlayerTestCase(unittest.TestCase):
-    _some_video = None
-    _some_video_without_subtitles = None
+BUCKET = dict()
 
+class YouTubePlayerTestCase(unittest.TestCase):
     def setUp(self):
         self.api = youtube.API(YOUTUBE_DEVELOPER_KEY)
 
-    def get_some_video(self):
+    def get_some_video(self, force_new=False):
         """
         Get some video that can be used to test all features
         the API implements, hence, subtitles, multiple qualities and so on.
         """
-        if self._some_video:
-            return self._some_video
-        search_results = self.api.search('google i/o keynote full length')
-        for result in search_results:
-            self._some_video = result
-            return result
+        if force_new or 'some_video' not in BUCKET:
+            search_results = self.api.search('google i/o keynote full length')
+            BUCKET['some_video'] = search_results.next()
+        return BUCKET['some_video']
 
     def get_some_video_without_subtitles(self):
-        if self._some_video_without_subtitles:
-            return self._some_video_without_subtitles
-        search_results = self.api.search('coldmirror')
-        for result in search_results:
-            self._some_video_without_subtitles = result
-            return result
+        if 'some_video_without_subtitles' not in BUCKET:
+            search_results = self.api.search('coldmirror')
+            BUCKET['some_video_without_subtitles'] = search_results.next()
+        return BUCKET['some_video_without_subtitles']
 
     def test_resolution_warning(self):
         video = youtube.Video(video_id=1337)
@@ -50,7 +45,7 @@ class YouTubePlayerTestCase(unittest.TestCase):
             self.assert_(isinstance(getattr(video, attr), expected_type))
 
     def test_video_info(self):
-        video = self.get_some_video()
+        video = self.get_some_video(force_new=True)
         self.assertRaises(RuntimeError, lambda: video.video_info)
         video.request_video_info()
         self.assert_(video.video_info)
@@ -68,7 +63,7 @@ class YouTubePlayerTestCase(unittest.TestCase):
         self.assert_(video.download_thumbnail())
 
     def test_subtitle_list(self):
-        video = self.get_some_video()
+        video = self.get_some_video(force_new=True)
         self.assertRaises(RuntimeError, lambda: video.subtitle_list)
         video.request_subtitle_list()
         self.assert_(video.subtitle_list)
