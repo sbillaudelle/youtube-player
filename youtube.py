@@ -160,9 +160,16 @@ class Video(object):
         if hasattr(self, '_video_info'):
             # All work already done, do nothing.
             return
-        info = urlparse.parse_qs(
-            urllib2.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
-        )
+        tempfile = NamedTempfile(self.video_id+'-info')
+        if tempfile.isempty():
+            raw_data = urllib2.urlopen(VIDEO_INFO_URL.format(video_id=self.video_id)).read()
+            with tempfile:
+                tempfile.file.write(raw_data)
+        else:
+            with tempfile:
+                raw_data = tempfile.file.read()
+
+        info = urlparse.parse_qs(raw_data)
         if info['status'][0] != 'ok':
             try:
                 video_title = "('" + self.title + "')"

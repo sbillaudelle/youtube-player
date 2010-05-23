@@ -21,7 +21,15 @@ YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvq
 
 PLAYER_LOGO = 'interface/youtube-player.svg'
 ICON_SIZE = 64
+DEFAULT_THUMBNAIL = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO)\
+                    .scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
+
+def crop_string(s, maxlen):
+    if len(s) <= maxlen:
+        return s
+    else:
+        return s[:maxlen] + '...'
 
 def convert_ns(t):
     s, ns = divmod(t, 1000000000)
@@ -411,33 +419,36 @@ class YouTubePlayer(object):
             return _escape_regex.sub(replace_func, s)
 
         for video in search_result:
-            self.videos[video.video_id] = video
+            self.videos.setdefault(video.video_id, video)
 
             title = escape_markup(video.title)
             description = '' if video.description is None else escape_markup(video.description)
 
-            info = "<b>{0}</b>\n{1}\n{2}".format(title, description[:100], convert_ns(int(video.duration) * 1000000000))
-            thumbnail = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+            info = "<b>{title}</b>\n{description}\n{duration}".format(
+                title=title,
+                description=crop_string(description, 100),
+                duration=convert_ns(int(video.duration) * 1000000000)
+            )
 
             with gtk.gdk.lock:
-                video._tree_iter = self.liststore.append((video.video_id, info, thumbnail, True))
+                video._tree_iter = self.liststore.append((video.video_id, info, DEFAULT_THUMBNAIL, True))
 
         for column, row in enumerate(self.liststore):
             video = self.videos[row[0]]
-            thumbnail = None
+            thumbnail = DEFAULT_THUMBNAIL
             if self._request_video_info(video):
-                thumbnail = video.download_thumbnail()
-            row[2] = gtk.gdk.pixbuf_new_from_file(thumbnail or PLAYER_LOGO).scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+                thumbnail = gtk.gdk.pixbuf_new_from_file(video.download_thumbnail())\
+                            .scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+            row[2] = thumbnail
 
 
     def _request_video_info(self, video):
-        with self.threadlock:
-            try:
-                video.request_video_info()
-                return True
-            except youtube.YouTubeError:
-                self.liststore.set_value(video._tree_iter, 3, False)
-                return False
+        try:
+            video.request_video_info()
+            return True
+        except youtube.YouTubeError:
+            self.liststore.set_value(video._tree_iter, 3, False)
+            return False
 
 
     def update_progressbar(self):
