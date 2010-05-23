@@ -1,13 +1,13 @@
-import os
 import re
 import urllib2
 import urlparse
 import datetime
-from lxml.etree import parse as parse_xml
+from lxml.etree import parse as parse_xml, XMLSyntaxError
 
 import gdata.youtube
 import gdata.youtube.service
 from utils import cached_property, ordereddict
+from common import NamedTempfile
 
 
 VIDEO_INFO_URL      = 'http://www.youtube.com/get_video_info?video_id={video_id}'
@@ -125,12 +125,17 @@ class Video(object):
         def _to_datetime(s):
             return datetime.datetime.strptime(s, '%Y-%m-%dT%H:%M:%S.000Z')
 
+        def _split_tags(s):
+            if not s:
+                return None
+            return map(str.split, s.split(','))
+
         return cls(
             title       = feed_entry.media.title.text,
             datetime    = _to_datetime(feed_entry.published.text),
             description = feed_entry.media.description.text,
             category    = feed_entry.media.category[0].text,
-            tags        = map(str.strip, feed_entry.media.keywords.text.split(',')),
+            tags        = _split_tags(feed_entry.media.keywords.text),
             uri         = feed_entry.media.player.url,
             duration    = int(feed_entry.media.duration.seconds),
             view_count  = feed_entry.statistics and int(feed_entry.statistics.view_count) or None,
@@ -240,12 +245,13 @@ class Video(object):
     def _thumbnail_path(self):
         if self.thumbnail_url is None:
             return None
-        from common import NamedTempfile
-        with NamedTempfile('thumbnail-'+self.video_id) as tempfile:
-            if os.path.getsize(tempfile.name) == 0:
-                # download the thumbnail if not already done so.
-                tempfile.write(urllib2.urlopen(self.thumbnail_url).read())
-            return tempfile.name
+
+        tempfile = NamedTempfile('thumbnail-'+self.video_id)
+        if tempfile.isempty():
+            # download the thumbnail if not already done so.
+            with tempfile:
+                tempfile.file.write(urllib2.urlopen(self.thumbnail_url).read())
+        return tempfile.name
 
     def request_subtitle_list(self):
         if hasattr(self, '_subtitle_list'):
@@ -254,9 +260,14 @@ class Video(object):
 
         self._subtitle_list = dict()
         self._subtitles = dict()
-        xml = parse_xml(SUBTITLE_LIST_URL.format(video_id=self.video_id))
-        # TODO: The request response may be empty, return an empty
-        # list in that case
+        try:
+            xml = parse_xml(SUBTITLE_LIST_URL.format(video_id=self.video_id))
+        except XMLSyntaxError, exc:
+            if not 'Document is empty' in str(exc):
+                raise
+            else:
+                # no subtitles
+                return
         for child in xml.getroot():
             self._subtitle_list[child.attrib['lang_code']] = child.attrib
 
@@ -264,7 +275,26 @@ class Video(object):
     def subtitle_list(self):
         """
         A dictionary containing information about all subtitles available
-        for this video.
+        for this video. The dict looks like this::
+
+             {
+                'de': {'lang_code': 'de',
+                       'lang_translated': 'German',
+                       'id': '5',
+                       'lang_original': 'Deutsch'
+                      },
+                'hu': {'lang_code': 'hu',
+                       'lang_translated': 'Hungarian',
+                       'id': '23',
+                       'lang_original': 'Magyar'
+                      },
+                'fa': {'lang_code': 'fa',
+                       'lang_translated': 'Persian',
+                       'id': '49',
+                       'lang_original': u'\u0641\u0627\u0631\u0633\u06cc'
+                      },
+                ...
+            }
 
         Has to be requested from YouTube using ``request_subtitle_list`` or a
         ``RuntimeError`` will be raised when trying to access this property.
@@ -275,7 +305,7 @@ class Video(object):
             raise RuntimeError("Cannot access 'subtitle_list': Make sure to request "
                                "it using 'request_subtitle_list' first.")
 
-    def download_subtitle(self, language):
+    def download_subtitle(self, language, format='xml'):
         """
         Downloads the subtitle for ``language`` where ``language`` is
         a language code of 2 chars, for example *en*.
@@ -285,11 +315,40 @@ class Video(object):
         if language in self._subtitles:
             # All work done, just returned the cached subtitles.
             return self._subtitles[language]
+
         # TODO: what happens if the subtitle is not available?
-        xml = parse_xml(SUBTITLE_GET_URL.format(video_id=self.video_id,
-                                                language_code=language))
-        # TODO
-        # return tha_subtitle
+        tempfile = NamedTempfile(self.video_id+'-subtitle-'+language+'.xml')
+        if tempfile.isempty():
+            subtitle_url = SUBTITLE_GET_URL.format(video_id=self.video_id, language_code=language)
+            with tempfile:
+                tempfile.file.write(urllib2.urlopen(subtitle_url).read())
+            if tempfile.isempty():
+                raise YouTubeError("Subtitle for video '{0}' not available in '{1}'"\
+                                   .format(self.video_id, language))
+
+        if format == 'xml':
+            return tempfile.name
+        #elif format == 'json':
+        #    return self._subtitle_file_to_json(tempfile.name, language)
+        elif format == 'mpl2':
+            return self._subtitle_file_as_mpl2(tempfile.name, language)
+        else:
+            raise TypeError("Unknown subtitle format '%s'" % format)
+
+
+    def _subtitle_file_as_mpl2(self, xmlfile, language):
+        # see http://lists.mplayerhq.hu/pipermail/mplayer-users/2003-February/030222.html
+        tempfile = NamedTempfile(self.video_id+'-subtitle-'+language+'.mpl2')
+        if not tempfile.isempty():
+            return tempfile.name
+        with tempfile:
+            xmltree = parse_xml(xmlfile).getroot()
+            for element in xmltree:
+               start = int(float(element.attrib['start'])*1000)
+               end = start + int(float(element.attrib['dur'])*1000)
+               text = element.text.replace('\n', '|')
+               tempfile.file.write('[{0}][{1}]{2}\n'.format(start, end, text))
+        return tempfile.name
 
 
 class API(object):
