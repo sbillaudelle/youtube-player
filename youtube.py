@@ -147,7 +147,7 @@ class Video(object):
     #: URL to the video's thumbnail
     #: (``request_video_info`` has to be called before accessing this property``)
     thumbnail_url   = _VideoInfoProperty('thumbnail_url', allow_none=True)
-    has_subtitles   = _VideoInfoProperty('has_cc', type=bool)
+    has_subtitles   = _VideoInfoProperty('has_cc', type=lambda x:x == 'True')
 
 
     def request_video_info(self):

@@ -163,15 +163,8 @@ class YouTubePlayer(cream.Module):
         self.treeview.connect('row-activated', self.row_activated_cb)
         self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
 
-        # Prefill the resolution combo box:
-        for index, resolution in enumerate(youtube.RESOLUTIONS.itervalues()):
-            self.resolutions_store.append((resolution,))
-            if resolution == self.config.preferred_resolution:
-                self.resolution_chooser.set_active(index)
-
         # Connect to YouTube:
         self.youtube = youtube.API(YOUTUBE_DEVELOPER_KEY)
-
 
         self.buffer = Buffer()
         self.buffer.connect('update', self.buffer_update_cb)
@@ -346,11 +339,10 @@ class YouTubePlayer(cream.Module):
 
 
     def resolution_changed_cb(self, resolution_combobox):
-        self.config.preferred_resolution = self.resolutions_store.get_value(
-                resolution_combobox.get_active_iter(), 0)
-        if self._current_video_id:
-            # User changed the quality while playing a video -- replay currently
-            # played video with the selected quality.
+        if self.state == STATE_PLAYING:
+            gtk_iter = resolution_combobox.get_active_iter()
+            self.config.preferred_resolution = self.resolutions_store.get_value(gtk_iter, 0)
+            # replay the currently played video with the selected quality.
             # TODO: Remember the seek here and re-seek to that point.
             thread.start_new_thread(self.load_video, (self._current_video_id,))
 
@@ -500,22 +492,25 @@ class YouTubePlayer(cream.Module):
         self.info_label_description.set_text(video.description)
         self.show_subtitles_btn.set_sensitive(video.has_subtitles)
 
-        try:
-            video_url = video.stream_urls[self.config.preferred_resolution]
-        except KeyError:
-            # fallback: use the highest possible resolution
-            video_url = video.stream_urls[video.stream_urls.keys()[0]]
+        resolution = self.config.preferred_resolution
+        if resolution not in video.stream_urls:
+            # preferred resolution not available, use the
+            # highest possible
+            resolution = video.stream_urls.iterkeys().next()
+        self.resolutions_store.clear()
 
+        for resolution_name in youtube.RESOLUTIONS.itervalues():
+            if resolution_name in video.stream_urls:
+                gtk_iter = self.resolutions_store.append((resolution_name,))
+                if resolution_name == resolution:
+                    self.resolution_chooser.set_active_iter(gtk_iter)
+
+        video_url = video.stream_urls[resolution]
         tmp_video_url = self.buffer.load(video_url)
-
         self.playbin.set_property('uri', 'file://{0}'.format(tmp_video_url))
         self._current_video_id = id
-
         self.buffer.set_state(STATE_PLAYING)
         self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
-
-        #if play:
-        #    self.set_state(STATE_BUFFERING)
 
 
     def on_message(self, bus, message):
