@@ -544,7 +544,7 @@ class YouTubePlayer(cream.Module):
         self.playbin.set_property('uri', 'file://{0}'.format(tmp_video_url))
         self._current_video_id = id
         self.buffer.set_state(STATE_PLAYING)
-received
+
         if play:
             self.set_state(STATE_LOADING)
 
