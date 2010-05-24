@@ -1,7 +1,17 @@
 import math
 
+import gobject
 import gtk
 import cairo
+
+MODE_SPINNING = 0
+MODE_STATIC = 1
+
+
+def lighten_color(c):
+
+    return gtk.gdk.Color(int(c.red * 1.1), int(c.green * 1.1), int(c.blue * 1.1))
+
 
 class Throbber(gtk.Widget):
 
@@ -11,7 +21,14 @@ class Throbber(gtk.Widget):
 
         gtk.Widget.__init__(self)
 
+        style = self.get_style()
+        background = style.dark[gtk.STATE_NORMAL]
+        self.color = style.dark[gtk.STATE_NORMAL]
+
+        self.mode = MODE_STATIC
         self.progress = 0
+
+        self.tmp_rotation = 0.0
 
 
     def do_realize(self):
@@ -19,6 +36,10 @@ class Throbber(gtk.Widget):
         self.set_flags(self.flags() | gtk.REALIZED | gtk.NO_WINDOW)
         self.window = self.get_parent_window()
         self.style.attach(self.window)
+
+        style = self.get_style()
+        background = style.dark[gtk.STATE_NORMAL]
+        self.color = style.dark[gtk.STATE_NORMAL]
 
 
     def do_size_request(self, requisition):
@@ -43,16 +64,50 @@ class Throbber(gtk.Widget):
             self.draw()
 
 
+    def set_mode(self, mode):
+
+        if self.mode == mode:
+            return
+
+        self.mode = mode
+
+        if self.mode == MODE_SPINNING:
+            gobject.timeout_add(50, self.update_spinning)
+
+
+    def update_spinning(self):
+
+        self.tmp_rotation += .1
+        self.draw()
+
+        if self.mode == MODE_SPINNING:
+            return True
+        else:
+            return False
+
+
     def draw(self):
 
-        self.window.invalidate_rect(self.allocation, True)
+        if self.window:
+            self.window.invalidate_rect(self.allocation, True)
 
 
     def _draw(self):
 
-        style = self.get_style()
-        background = style.dark[gtk.STATE_NORMAL]
-        border = style.dark[gtk.STATE_NORMAL]
+        def draw_tortenstueck(rotation, alpha=1):
+
+            rotation *= 2 * math.pi
+
+            ctx.save()
+
+            ctx.arc(.5 * width, .5 * height, .45 * factor, -.555 * math.pi + rotation, -.445 * math.pi + rotation)
+            ctx.arc_negative(.5 * width, .5 * height, .15 * factor, -.465 * math.pi + rotation, -.535 * math.pi + rotation)
+            ctx.close_path()
+
+            ctx.set_source_rgba(self.color.red / 65535.0, self.color.green / 65535.0, self.color.blue / 65535.0, alpha)
+            ctx.fill()
+
+            ctx.restore()
 
         width = self.allocation.width
         height = self.allocation.height
@@ -65,17 +120,23 @@ class Throbber(gtk.Widget):
         ctx.translate(self.allocation.x, self.allocation.y)
         ctx.set_line_width(1)
 
-        ctx.set_source_rgba(background.red / 65535.0, background.green / 65535.0, background.blue / 65535.0, .5)
-        ctx.arc(.5 * width, .5 * height, .45 * factor, -.5 * math.pi, (-.5 + 2 * self.progress) * math.pi)
-        ctx.line_to(.5 * width, .5 * height)
-        ctx.close_path()
-        ctx.fill_preserve()
-        ctx.set_source_rgba(border.red / 65535.0, border.green / 65535.0, border.blue / 65535.0, 1)
-        ctx.stroke()
+
+        if self.mode == MODE_STATIC:
+            for i in xrange(0, self.progress * 10.0):
+                draw_tortenstueck(i / 10.0)
+        else:
+            draw_tortenstueck(self.tmp_rotation)
+
+            for i in xrange(0, 10):
+                alpha = math.cos((i / 10.0) * math.pi / 2.0)
+                draw_tortenstueck(self.tmp_rotation - i * .1, alpha)
 
 
 if __name__ == '__main__':
     win = gtk.Window()
-    win.add(Throbber())
+    t = Throbber()
+    t.set_mode(MODE_SPINNING)
+    t.set_progress(.3)
+    win.add(t)
     win.show_all()
     gtk.main()

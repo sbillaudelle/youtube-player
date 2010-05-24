@@ -15,7 +15,7 @@ class Buffer(gobject.GObject):
     __gtype_name__ = 'Buffer'
     __gsignals__ = {
         'ready': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, ()),
-        'update': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, (gobject.TYPE_INT,))
+        'update': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, (gobject.TYPE_FLOAT,))
         }
 
     def __init__(self):
@@ -48,9 +48,12 @@ class Buffer(gobject.GObject):
         self.test_bus.connect("message", self.test_bus_message_cb)
 
 
-    def autoplug_continue_cb(self, bin, pad, caps):
+    def emit_ready(self):
 
-        gobject.timeout_add(100, lambda *args: self.emit('ready'))
+        if self.pipeline.query_position(gst.FORMAT_BYTES, None)[0] <= 200000:
+            return True
+
+        self.emit('ready')
         self.ready = True
         self.test_pipeline.set_state(gst.STATE_NULL)
 
@@ -63,6 +66,13 @@ class Buffer(gobject.GObject):
         self.test_bus = self.test_pipeline.get_bus()
         self.test_bus.add_signal_watch()
         self.test_bus.connect("message", self.test_bus_message_cb)
+
+        return False
+
+
+    def autoplug_continue_cb(self, bin, pad, caps):
+
+        gobject.timeout_add(100, lambda *args: self.emit_ready())
 
 
     def bus_message_cb(self, bus, message):
@@ -88,13 +98,15 @@ class Buffer(gobject.GObject):
             return
         try:
             duration = self.pipeline.query_duration(gst.FORMAT_BYTES, None)[0]
-            position = self.pipeline.query_position(gst.FORMAT_BYTES, None)[0]
-            self.emit('update', max(0, (float(position) / float(duration) * 100) - 5))
+            position = max(0, self.pipeline.query_position(gst.FORMAT_BYTES, None)[0] - 500000)
+            if position == 0:
+                self.emit('update', -1)
+            else:
+                self.emit('update', max(0, (float(position) / float(duration) * 100)))
             if not self.ready:
                 self.test_pipeline.set_state(gst.STATE_PLAYING)
         except gst.QueryError:
-            duration = 0
-            position = 0
+            self.emit('update', -1)
 
         return True
 

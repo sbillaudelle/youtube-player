@@ -11,10 +11,10 @@ import cream.gui
 from cream.util.string import crop_string
 
 import youtube
-from throbberwidget import Throbber
+from throbberwidget import Throbber, MODE_SPINNING, MODE_STATIC
 from buffer import Buffer
 
-from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING
+from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING, STATE_LOADING
 from common import Lock
 
 
@@ -175,6 +175,7 @@ class YouTubePlayer(cream.Module):
 
         self.buffer = Buffer()
         self.buffer.connect('update', self.buffer_update_cb)
+        self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
 
         # Initialize GStreamer stuff:
         self.player = gst.Pipeline("player")
@@ -182,8 +183,8 @@ class YouTubePlayer(cream.Module):
         self.playbin = gst.element_factory_make("playbin2", "playbin")
         self.video_sink = gst.element_factory_make("xvimagesink", "vsink")
         self.playbin.set_property('video-sink', self.video_sink)
-        #self.playbin.set_property('buffer-duration', 10000000000)
-        #self.playbin.set_property('buffer-size', 2000000000)
+        self.playbin.set_property('buffer-duration', 10000000000)
+        self.playbin.set_property('buffer-size', 2000000000)
         self.player.add(self.playbin)
 
         bus = self.player.get_bus()
@@ -201,11 +202,24 @@ class YouTubePlayer(cream.Module):
 
     def buffer_update_cb(self, source, position):
 
-        self.progress_scale.set_fill_level(position)
+        self.progress_scale.set_fill_level(max(0, position - 1))
 
-        if position >= 10 and self.state == STATE_BUFFERING:
-            print "PLAY"
-            self.set_state(STATE_PLAYING)
+        if position == -1:
+            self.throbber.set_mode(MODE_SPINNING)
+        else:
+            self.throbber.set_mode(MODE_STATIC)
+
+            try:
+                duration = self.playbin.query_duration(gst.FORMAT_TIME, None)[0]
+            except:
+                duration = 0
+    
+            buffer_length = (position * duration) / 100000000000
+    
+            self.throbber.set_progress(buffer_length / 5.0)
+    
+            if buffer_length >= 5 and self.state == STATE_BUFFERING:
+                self.set_state(STATE_PLAYING)
 
 
     def seek_cb(self, source, scroll, value):
@@ -486,6 +500,16 @@ class YouTubePlayer(cream.Module):
                     self.control_area.add(self.throbber)
                     self.throbber.show()
 
+        elif state == STATE_LOADING:
+            self.state = STATE_LOADING
+
+            with self.threadlock:
+                if self.control_area.get_child() != self.throbber:
+                    self.throbber.set_size_request(self.play_pause_button.get_allocation().width, self.play_pause_button.get_allocation().height)
+                    self.control_area.remove(self.play_pause_button)
+                    self.control_area.add(self.throbber)
+                    self.throbber.show()
+
 
     def load_video(self, id, play=True):
 
@@ -512,10 +536,9 @@ class YouTubePlayer(cream.Module):
         self._current_video_id = id
 
         self.buffer.set_state(STATE_PLAYING)
-        self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
 
-        #if play:
-        #    self.set_state(STATE_BUFFERING)
+        if play:
+            self.set_state(STATE_LOADING)
 
 
     def on_message(self, bus, message):
