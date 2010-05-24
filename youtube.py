@@ -276,7 +276,7 @@ class Video(object):
             url = SUBTITLE_LIST_URL.format(video_id=self.video_id)
             xmltree = parse_xml_from_string(urllib2.urlopen(url).read())
         except XMLSyntaxError, exc:
-            if not 'Document is empty' in str(exc):
+            if str(exc) not in ('Document is empty', 'None'):
                 raise
             else:
                 # no subtitles
