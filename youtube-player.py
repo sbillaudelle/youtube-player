@@ -154,7 +154,7 @@ class YouTubePlayer(cream.Module):
         self.sort_by_menu.connect('selection-done', self.search_cb)
         self.back_to_search_button.connect('clicked', self.back_to_search_button_clicked_cb)
         self.info_label_description.connect('size-allocate', lambda source, allocation: source.set_size_request(allocation.width - 2, -1))
-        self.show_subtitles_btn.connect('activate', self.show_subtitles_changed_cb)
+        self.show_subtitles_btn.connect('toggled', self.subtitles_toggled_cb)
         self.progress_scale.connect('change-value', self.seek_cb)
 
         self.search_entry.connect('changed', lambda *args: self.extend_slide_to_info_timeout())
@@ -205,13 +205,12 @@ class YouTubePlayer(cream.Module):
 
             try:
                 duration = self.playbin.query_duration(gst.FORMAT_TIME, None)[0]
-            except:
+            except gst.QueryError:
                 duration = 0
-    
+
             buffer_length = (position * duration) / 100000000000
-    
             self.throbber.set_progress(buffer_length / 5.0)
-    
+
             if buffer_length >= 5 and self.state == STATE_BUFFERING:
                 self.set_state(STATE_PLAYING)
 
@@ -231,7 +230,7 @@ class YouTubePlayer(cream.Module):
 
         try:
             duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
-        except:
+        except gst.QueryError:
             duration_ns = 0
 
         position_ns = (duration_ns / 100.0) * position
@@ -330,15 +329,24 @@ class YouTubePlayer(cream.Module):
         self.extend_slide_to_info_timeout()
 
 
-    def show_subtitles_changed_cb(self, *args):
+    def subtitles_toggled_cb(self, *args):
 
         video = self.videos[self._current_video_id]
         video.request_subtitle_list()
-        tempfile = video.download_subtitle('en', format='mpl2')
-        self.playbin.set_property('suburi', 'file:///%s' % tempfile)
-        self.playbin.set_property('subtitle-font-desc', 'Sans 14')
 
+        lang_code = 'en' # TODO
 
+        try:
+            tempfile = video.download_subtitle(lang_code, format='mpl2')
+        except youtube.YouTubeError:
+            # it is possible that the subtitle file is empty
+            # even if the language was listed to be available,
+            # so fail silently here
+            # TODO: ausgrau()
+            pass
+        else:
+            self.playbin.set_property('suburi', 'file://%s' % tempfile)
+            self.playbin.set_property('subtitle-font-desc', 'Sans 14')
 
 
     def row_activated_cb(self, source, iter, path):

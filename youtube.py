@@ -2,7 +2,8 @@ import re
 import urllib2
 import urlparse
 import datetime
-from lxml.etree import parse as parse_xml, XMLSyntaxError
+from lxml.etree import XMLSyntaxError, parse as parse_xml, \
+                       fromstring as parse_xml_from_string
 
 import gdata.youtube
 import gdata.youtube.service
@@ -269,14 +270,18 @@ class Video(object):
         self._subtitle_list = dict()
         self._subtitles = dict()
         try:
-            xml = parse_xml(SUBTITLE_LIST_URL.format(video_id=self.video_id))
+            # XXX: The following breaks lxml and I don't know why.
+            # I'll file a bug report.
+            #xml = parse_xml(SUBTITLE_LIST_URL.format(video_id=self.video_id))
+            url = SUBTITLE_LIST_URL.format(video_id=self.video_id)
+            xmltree = parse_xml_from_string(urllib2.urlopen(url).read())
         except XMLSyntaxError, exc:
             if not 'Document is empty' in str(exc):
                 raise
             else:
                 # no subtitles
                 return
-        for child in xml.getroot():
+        for child in xmltree:
             self._subtitle_list[child.attrib['lang_code']] = child.attrib
 
     @property
@@ -316,15 +321,19 @@ class Video(object):
     def download_subtitle(self, language, format='xml'):
         """
         Downloads the subtitle for ``language`` where ``language`` is
-        a language code of 2 chars, for example *en*.
+        a language code of 2 chars (e.g., *en*) and returns a temporary
+        file the subtitles were downloaded to.
 
-        Returns TODO: specify format
+        The ``format`` parameter specifies the file format the subtitles
+        shall be returned in. Currently supported are
+
+        * 'xml': (default) returns the original data received from YouTube.
+        * 'mpl2': returns the subtitles in MPL2 format.
         """
         if language in self._subtitles:
             # All work done, just returned the cached subtitles.
             return self._subtitles[language]
 
-        # TODO: what happens if the subtitle is not available?
         tempfile = NamedTempfile(self.video_id+'-subtitle-'+language+'.xml')
         if tempfile.isempty():
             subtitle_url = SUBTITLE_GET_URL.format(video_id=self.video_id, language_code=language)
