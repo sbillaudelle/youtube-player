@@ -3,10 +3,11 @@ import tempfile
 import thread
 import gtk
 
-STATE_NULL = 0
-STATE_PAUSED = 1
-STATE_PLAYING = 2
-STATE_BUFFERING = 3
+STATE_LOADING = 0
+STATE_NULL = 1
+STATE_PAUSED = 2
+STATE_PLAYING = 3
+STATE_BUFFERING = 4
 DEFAULT_TEMPFILE_DIR = os.path.join('cream', 'youtube-player')
 
 
