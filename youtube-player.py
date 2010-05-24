@@ -101,6 +101,7 @@ class YouTubePlayer(cream.Module):
 
     _current_video_id = None
     _slide_to_info_timeout = None
+    _seek_timeout = None
 
     def __init__(self):
 
@@ -222,6 +223,13 @@ class YouTubePlayer(cream.Module):
                 self.set_state(STATE_PLAYING)
 
 
+    def _seek(self, position):
+
+        self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, position)
+
+        return False
+
+
     def seek_cb(self, source, scroll, value):
 
         fill_level = self.progress_scale.get_fill_level()
@@ -235,7 +243,9 @@ class YouTubePlayer(cream.Module):
 
         position_ns = (duration_ns / 100.0) * position
 
-        self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, position_ns)
+        if self._seek_timeout:
+            gobject.source_remove(self._seek_timeout)
+        self._seek_timeout = gobject.timeout_add(10, lambda *args: self._seek(position_ns))
 
 
     def remove_slide_to_info_timeout(self):

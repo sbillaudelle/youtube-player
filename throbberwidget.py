@@ -122,7 +122,7 @@ class Throbber(gtk.Widget):
 
 
         if self.mode == MODE_STATIC:
-            for i in xrange(0, self.progress * 10.0):
+            for i in xrange(0, int(self.progress * 10.0)):
                 draw_tortenstueck(i / 10.0)
         else:
             draw_tortenstueck(self.tmp_rotation)
