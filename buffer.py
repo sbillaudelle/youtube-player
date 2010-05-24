@@ -30,14 +30,35 @@ class Buffer(gobject.GObject):
         self.pipeline = gst.parse_launch('souphttpsrc name=src ! filesink name=sink sync=false')
         self.src = self.pipeline.get_by_name('src')
         self.sink = self.pipeline.get_by_name('sink')
+        self.foo = self.pipeline.get_by_name('foo')
 
         self.bus = self.pipeline.get_bus()
         self.bus.add_signal_watch()
         self.bus.connect("message", self.bus_message_cb)
 
 
-        self.test_pipeline = gst.parse_launch('filesrc name=test_src ! decodebin2 ! fakesink')
+        self.test_pipeline = gst.parse_launch('filesrc name=test_src ! decodebin2 name=decoder ! fakesink')
         self.test_src = self.test_pipeline.get_by_name('test_src')
+        self.test_decoder = self.test_pipeline.get_by_name('decoder')
+
+        self.test_decoder.connect('autoplug-continue', self.autoplug_continue_cb)
+
+        self.test_bus = self.test_pipeline.get_bus()
+        self.test_bus.add_signal_watch()
+        self.test_bus.connect("message", self.test_bus_message_cb)
+
+
+    def autoplug_continue_cb(self, bin, pad, caps):
+
+        gobject.timeout_add(100, lambda *args: self.emit('ready'))
+        self.ready = True
+        self.test_pipeline.set_state(gst.STATE_NULL)
+
+        self.test_pipeline = gst.parse_launch('filesrc name=test_src ! decodebin2 name=decoder ! fakesink')
+        self.test_src = self.test_pipeline.get_by_name('test_src')
+        self.test_decoder = self.test_pipeline.get_by_name('decoder')
+
+        self.test_decoder.connect('autoplug-continue', self.autoplug_continue_cb)
 
         self.test_bus = self.test_pipeline.get_bus()
         self.test_bus.add_signal_watch()
@@ -56,11 +77,7 @@ class Buffer(gobject.GObject):
 
         t = message.type
 
-        if t == gst.MESSAGE_TAG:
-            self.emit('ready')
-            self.ready = True
-            self.test_pipeline.set_state(gst.STATE_NULL)
-        elif t == gst.MESSAGE_ERROR:
+        if t == gst.MESSAGE_ERROR:
             self.test_pipeline.set_state(gst.STATE_NULL)
 
 
@@ -72,7 +89,7 @@ class Buffer(gobject.GObject):
         try:
             duration = self.pipeline.query_duration(gst.FORMAT_BYTES, None)[0]
             position = self.pipeline.query_position(gst.FORMAT_BYTES, None)[0]
-            self.emit('update', float(position) / float(duration) * 100)
+            self.emit('update', max(0, (float(position) / float(duration) * 100) - 5))
             if not self.ready:
                 self.test_pipeline.set_state(gst.STATE_PLAYING)
         except gst.QueryError:

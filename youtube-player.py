@@ -182,8 +182,8 @@ class YouTubePlayer(cream.Module):
         self.playbin = gst.element_factory_make("playbin2", "playbin")
         self.video_sink = gst.element_factory_make("xvimagesink", "vsink")
         self.playbin.set_property('video-sink', self.video_sink)
-        self.playbin.set_property('buffer-duration', 10000000000)
-        self.playbin.set_property('buffer-size', 2000000000)
+        #self.playbin.set_property('buffer-duration', 10000000000)
+        #self.playbin.set_property('buffer-size', 2000000000)
         self.player.add(self.playbin)
 
         bus = self.player.get_bus()
@@ -210,12 +210,18 @@ class YouTubePlayer(cream.Module):
 
     def seek_cb(self, source, scroll, value):
 
+        fill_level = self.progress_scale.get_fill_level()
+
+        position = min(value, fill_level)
+
         try:
             duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
         except:
             duration_ns = 0
 
-        self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, (duration_ns / 100.0) * value)
+        position_ns = (duration_ns / 100.0) * position
+
+        self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, position_ns)
 
 
     def remove_slide_to_info_timeout(self):
@@ -308,7 +314,7 @@ class YouTubePlayer(cream.Module):
 
 
     def show_subtitles_changed_cb(self, *args):
-        print args
+
         video = self.videos[self._current_video_id]
         video.request_subtitle_list()
         tempfile = video.download_subtitle('en', format='mpl2')
