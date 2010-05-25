@@ -527,8 +527,8 @@ class YouTubePlayer(cream.Module):
         video = self.videos[id]
         self._request_video_info(video)
 
-        self.info_label_title.set_text(video.title)
-        self.info_label_description.set_text(video.description)
+        self.info_label_title.set_text(video.title or '')
+        self.info_label_description.set_text(video.description or '')
         self.show_subtitles_btn.set_sensitive(video.has_subtitles)
 
         resolution = self.config.preferred_resolution
@@ -562,6 +562,7 @@ class YouTubePlayer(cream.Module):
             self.slider.slide_to(self.search_box)
             self.set_state(STATE_NULL)
             self.buffer.flush()
+
         elif type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
             print "Error: %s" % err, debug
