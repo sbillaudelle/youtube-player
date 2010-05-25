@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import thread
-import math
 import os
 import gobject
 import gtk
@@ -8,6 +7,7 @@ import gst
 
 import cream.gui
 from cream.gui.widgets.slider import Slider
+from cream.util.string import crop_string
 
 import youtube
 from throbberwidget import Throbber, MODE_SPINNING, MODE_STATIC
@@ -25,12 +25,6 @@ ICON_SIZE = 64
 DEFAULT_THUMBNAIL = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO)\
                     .scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
 
-
-def crop_string(s, maxlen):
-    if len(s) <= maxlen:
-        return s
-    else:
-        return s[:maxlen] + '...'
 
 def convert_ns(t):
     s, ns = divmod(t, 1000000000)

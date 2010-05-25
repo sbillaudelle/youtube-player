@@ -7,7 +7,8 @@ from lxml.etree import XMLSyntaxError, parse as parse_xml, \
 
 import gdata.youtube
 import gdata.youtube.service
-from utils import cached_property, ordereddict
+from cream.util import cached_property
+from cream.util.dicts import ordereddict
 from common import NamedTempfile
 
 

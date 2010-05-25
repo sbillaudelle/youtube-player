@@ -1,29 +1,5 @@
-"""
-    Various utils extracted from `cream.util`.
-"""
-
-class cached_property(object):
-    # taken from werkzeug (BSD license, original author: Armin Ronacher)
-    not_none = False
-    # if `not_none` is set, `cached_property` won't accept `None` as valid
-    # `func` return value but will stay and wait for some non-`None` value.
-
-    def __init__(self, func, name=None, doc=None):
-        self.func = func
-        self.__name__ = name or func.__name__
-        self.__doc__ = doc or func.__doc__
-
-    def __get__(self, obj, type=None):
-        if obj is None:
-            return self
-        value = self.func(obj)
-        if self.not_none and value is None:
-            return None
-        setattr(obj, self.__name__, value)
-        return value
-
-
 from UserDict import DictMixin
+from collections import defaultdict
 
 class ordereddict(dict, DictMixin):
     def __init__(self, *args, **kwds):
@@ -120,3 +96,9 @@ class ordereddict(dict, DictMixin):
 
     def __ne__(self, other):
         return not self == other
+
+
+class ordereddefaultdict(ordereddict, defaultdict):
+    def __init__(self, default_factory, *args, **kwargs):
+        defaultdict.__init__(self, default_factory)
+        ordereddict.__init__(self, *args, **kwargs)
