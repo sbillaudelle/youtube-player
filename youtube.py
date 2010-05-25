@@ -177,11 +177,13 @@ class Video(object):
                 video_title = "('" + self.title + "')"
             except AttributeError:
                 video_title = ''
-            raise YouTubeError("Could not get video information about video "
-                               "'{video_id}' {video_title}: {reason}".format(
-                                   video_id=self.video_id,
-                                   video_title=video_title,
-                                   reason=info['reason'][0]))
+            exc = YouTubeError(
+                "Could not get video information about video '%s' %s: %s" % (
+                    self.video_id, video_title, info['reason'][0]
+            ))
+            exc.reason = info['reason'][0]
+            raise exc
+
         else:
             self._video_info = info
 
@@ -376,12 +378,13 @@ class API(object):
         self.service.developer_key = developer_key
 
 
-    def search(self, search_string, order_by=SORT_BY_RELEVANCE):
+    def search(self, search_string, order_by=SORT_BY_RELEVANCE, **query_args):
 
         query = gdata.youtube.service.YouTubeVideoQuery()
         query.vq = search_string
         query.orderby = order_by
         query.racy = 'include'
+        query.update(query_args)
         feed = self.service.YouTubeQuery(query)
 
         for entry in feed.entry:
