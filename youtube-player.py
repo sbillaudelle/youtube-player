@@ -3,23 +3,23 @@ import thread
 import math
 import re
 import re
-
->>>>>>> master
+import os
 import gobject
 import gtk
 import gst
 
 import youtube
-from throbberwidget import Throbber
+from throbberwidget import Throbber, MODE_SPINNING, MODE_STATIC
 from buffer import Buffer
 
-from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING
+from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING, STATE_LOADING
 from common import Lock
 
 
 YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvqenE2afoyjQB276fWVx1T3qpDi7FFO6tkVs7JqqTmRRA'
 
-PLAYER_LOGO = 'interface/youtube-player.svg'
+INTERFACE_FILE = os.path.join(os.path.dirname(__file__), 'interface/interface.ui')
+PLAYER_LOGO    = os.path.join(os.path.dirname(__file__), 'interface/youtube-player.svg')
 ICON_SIZE = 64
 DEFAULT_THUMBNAIL = gtk.gdk.pixbuf_new_from_file(PLAYER_LOGO)\
                     .scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
@@ -149,6 +149,7 @@ class YouTubePlayer(object):
 
     _current_video_id = None
     _slide_to_info_timeout = None
+    _seek_timeout = None
 
     def __init__(self):
 
@@ -160,7 +161,7 @@ class YouTubePlayer(object):
 
         # Build GTK+ interface:
         self.interface = gtk.Builder()
-        self.interface.add_from_file('interface/interface.ui')
+        self.interface.add_from_file(INTERFACE_FILE)
 
         for obj in ('window', 'fullscreen_window', 'video_area', 'control_area',
                     'fullscreen_video_area', 'search_entry', 'play_pause_button',
@@ -202,7 +203,7 @@ class YouTubePlayer(object):
         self.sort_by_menu.connect('selection-done', self.search_cb)
         self.back_to_search_button.connect('clicked', self.back_to_search_button_clicked_cb)
         self.info_label_description.connect('size-allocate', lambda source, allocation: source.set_size_request(allocation.width - 2, -1))
-        self.show_subtitles_btn.connect('activate', self.show_subtitles_changed_cb)
+        self.show_subtitles_btn.connect('toggled', self.subtitles_toggled_cb)
         self.progress_scale.connect('change-value', self.seek_cb)
 
         self.search_entry.connect('changed', lambda *args: self.extend_slide_to_info_timeout())
@@ -212,18 +213,12 @@ class YouTubePlayer(object):
         self.treeview.connect('row-activated', self.row_activated_cb)
         self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
 
-        # Prefill the resolution combo box:
-        for index, resolution in enumerate(youtube.RESOLUTIONS.itervalues()):
-            self.resolutions_store.append((resolution,))
-            if resolution == self.preferred_resolution:
-                self.resolution_chooser.set_active(index)
-
         # Connect to YouTube:
         self.youtube = youtube.API(YOUTUBE_DEVELOPER_KEY)
 
-
         self.buffer = Buffer()
         self.buffer.connect('update', self.buffer_update_cb)
+        self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
 
         # Initialize GStreamer stuff:
         self.player = gst.Pipeline("player")
@@ -250,21 +245,48 @@ class YouTubePlayer(object):
 
     def buffer_update_cb(self, source, position):
 
-        self.progress_scale.set_fill_level(position)
+        self.progress_scale.set_fill_level(max(0, position - 1))
 
-        if position >= 10 and self.state == STATE_BUFFERING:
-            print "PLAY"
-            self.set_state(STATE_PLAYING)
+        if position == -1:
+            self.throbber.set_mode(MODE_SPINNING)
+        else:
+            self.throbber.set_mode(MODE_STATIC)
+
+            try:
+                duration = self.playbin.query_duration(gst.FORMAT_TIME, None)[0]
+            except gst.QueryError:
+                duration = 0
+
+            buffer_length = (position * duration) / 100000000000
+            self.throbber.set_progress(buffer_length / 5.0)
+
+            if buffer_length >= 5 and self.state == STATE_BUFFERING:
+                self.set_state(STATE_PLAYING)
+
+
+    def _seek(self, position):
+
+        self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, position)
+
+        return False
 
 
     def seek_cb(self, source, scroll, value):
 
+        fill_level = self.progress_scale.get_fill_level()
+
+        position = min(value, fill_level)
+
         try:
             duration_ns = self.player.query_duration(gst.FORMAT_TIME, None)[0]
-        except:
+        except gst.QueryError:
             duration_ns = 0
 
-        self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, (duration_ns / 100.0) * value)
+        position_ns = (duration_ns / 100.0) * position
+
+        if self._seek_timeout:
+            gobject.source_remove(self._seek_timeout)
+        self._seek_timeout = gobject.timeout_add(10, lambda *args: self._seek(position_ns))
 
 
     def remove_slide_to_info_timeout(self):
@@ -356,15 +378,24 @@ class YouTubePlayer(object):
         self.extend_slide_to_info_timeout()
 
 
-    def show_subtitles_changed_cb(self, *args):
-        print args
+    def subtitles_toggled_cb(self, *args):
+
         video = self.videos[self._current_video_id]
         video.request_subtitle_list()
-        tempfile = video.download_subtitle('en', format='mpl2')
-        self.playbin.set_property('suburi', 'file:///%s' % tempfile)
-        self.playbin.set_property('subtitle-font-desc', 'Sans 14')
 
+        lang_code = 'en' # TODO
 
+        try:
+            tempfile = video.download_subtitle(lang_code, format='mpl2')
+        except youtube.YouTubeError:
+            # it is possible that the subtitle file is empty
+            # even if the language was listed to be available,
+            # so fail silently here
+            # TODO: ausgrau()
+            pass
+        else:
+            self.playbin.set_property('suburi', 'file://%s' % tempfile)
+            self.playbin.set_property('subtitle-font-desc', 'Sans 14')
 
 
     def row_activated_cb(self, source, iter, path):
@@ -389,11 +420,10 @@ class YouTubePlayer(object):
 
 
     def resolution_changed_cb(self, resolution_combobox):
-        self.preferred_resolution = self.resolutions_store.get_value(
-                resolution_combobox.get_active_iter(), 0)
-        if self._current_video_id:
-            # User changed the quality while playing a video -- replay currently
-            # played video with the selected quality.
+        if self.state == STATE_PLAYING:
+            gtk_iter = resolution_combobox.get_active_iter()
+            self.preferred_resolution = self.resolutions_store.get_value(gtk_iter, 0)
+            # replay the currently played video with the selected quality.
             # TODO: Remember the seek here and re-seek to that point.
             thread.start_new_thread(self.load_video, (self._current_video_id,))
 
@@ -529,6 +559,16 @@ class YouTubePlayer(object):
                     self.control_area.add(self.throbber)
                     self.throbber.show()
 
+        elif state == STATE_LOADING:
+            self.state = STATE_LOADING
+
+            with self.threadlock:
+                if self.control_area.get_child() != self.throbber:
+                    self.throbber.set_size_request(self.play_pause_button.get_allocation().width, self.play_pause_button.get_allocation().height)
+                    self.control_area.remove(self.play_pause_button)
+                    self.control_area.add(self.throbber)
+                    self.throbber.show()
+
 
     def load_video(self, id, play=True):
 
@@ -543,23 +583,27 @@ class YouTubePlayer(object):
         self.info_label_description.set_text(video.description)
         self.show_subtitles_btn.set_sensitive(video.has_subtitles)
 
-        try:
-            video_url = video.stream_urls[self.preferred_resolution]
-        except KeyError:
-            # fallback: use the highest possible resolution
-            video_url = video.stream_urls[video.stream_urls.keys()[0]]
+        resolution = self.preferred_resolution
+        if resolution not in video.stream_urls:
+            # preferred resolution not available, use the
+            # highest possible
+            resolution = video.stream_urls.iterkeys().next()
+        self.resolutions_store.clear()
 
+        for resolution_name in youtube.RESOLUTIONS.itervalues():
+            if resolution_name in video.stream_urls:
+                gtk_iter = self.resolutions_store.append((resolution_name,))
+                if resolution_name == resolution:
+                    self.resolution_chooser.set_active_iter(gtk_iter)
+
+        video_url = video.stream_urls[resolution]
         tmp_video_url = self.buffer.load(video_url)
-
         self.playbin.set_property('uri', 'file://{0}'.format(tmp_video_url))
         self._current_video_id = id
-
         self.buffer.set_state(STATE_PLAYING)
-        self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
 
-        #if play:
-        #    self.set_state(STATE_BUFFERING)
-
+        if play:
+            self.set_state(STATE_LOADING)
 
     def on_message(self, bus, message):
 

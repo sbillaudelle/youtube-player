@@ -15,7 +15,7 @@ class Buffer(gobject.GObject):
     __gtype_name__ = 'Buffer'
     __gsignals__ = {
         'ready': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, ()),
-        'update': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, (gobject.TYPE_INT,))
+        'update': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, (gobject.TYPE_FLOAT,))
         }
 
     def __init__(self):
@@ -30,18 +30,49 @@ class Buffer(gobject.GObject):
         self.pipeline = gst.parse_launch('souphttpsrc name=src ! filesink name=sink sync=false')
         self.src = self.pipeline.get_by_name('src')
         self.sink = self.pipeline.get_by_name('sink')
+        self.foo = self.pipeline.get_by_name('foo')
 
         self.bus = self.pipeline.get_bus()
         self.bus.add_signal_watch()
         self.bus.connect("message", self.bus_message_cb)
 
 
-        self.test_pipeline = gst.parse_launch('filesrc name=test_src ! decodebin2 ! fakesink')
+        self.test_pipeline = gst.parse_launch('filesrc name=test_src ! decodebin2 name=decoder ! fakesink')
         self.test_src = self.test_pipeline.get_by_name('test_src')
+        self.test_decoder = self.test_pipeline.get_by_name('decoder')
+
+        self.test_decoder.connect('autoplug-continue', self.autoplug_continue_cb)
 
         self.test_bus = self.test_pipeline.get_bus()
         self.test_bus.add_signal_watch()
         self.test_bus.connect("message", self.test_bus_message_cb)
+
+
+    def emit_ready(self):
+
+        if self.pipeline.query_position(gst.FORMAT_BYTES, None)[0] <= 200000:
+            return True
+
+        self.emit('ready')
+        self.ready = True
+        self.test_pipeline.set_state(gst.STATE_NULL)
+
+        self.test_pipeline = gst.parse_launch('filesrc name=test_src ! decodebin2 name=decoder ! fakesink')
+        self.test_src = self.test_pipeline.get_by_name('test_src')
+        self.test_decoder = self.test_pipeline.get_by_name('decoder')
+
+        self.test_decoder.connect('autoplug-continue', self.autoplug_continue_cb)
+
+        self.test_bus = self.test_pipeline.get_bus()
+        self.test_bus.add_signal_watch()
+        self.test_bus.connect("message", self.test_bus_message_cb)
+
+        return False
+
+
+    def autoplug_continue_cb(self, bin, pad, caps):
+
+        gobject.timeout_add(100, lambda *args: self.emit_ready())
 
 
     def bus_message_cb(self, bus, message):
@@ -56,11 +87,7 @@ class Buffer(gobject.GObject):
 
         t = message.type
 
-        if t == gst.MESSAGE_TAG:
-            self.emit('ready')
-            self.ready = True
-            self.test_pipeline.set_state(gst.STATE_NULL)
-        elif t == gst.MESSAGE_ERROR:
+        if t == gst.MESSAGE_ERROR:
             self.test_pipeline.set_state(gst.STATE_NULL)
 
 
@@ -71,13 +98,15 @@ class Buffer(gobject.GObject):
             return
         try:
             duration = self.pipeline.query_duration(gst.FORMAT_BYTES, None)[0]
-            position = self.pipeline.query_position(gst.FORMAT_BYTES, None)[0]
-            self.emit('update', float(position) / float(duration) * 100)
+            position = max(0, self.pipeline.query_position(gst.FORMAT_BYTES, None)[0] - 500000)
+            if position == 0:
+                self.emit('update', -1)
+            else:
+                self.emit('update', max(0, (float(position) / float(duration) * 100)))
             if not self.ready:
                 self.test_pipeline.set_state(gst.STATE_PLAYING)
         except gst.QueryError:
-            duration = 0
-            position = 0
+            self.emit('update', -1)
 
         return True
 
