@@ -2,6 +2,8 @@
 import thread
 import math
 import re
+=======
+>>>>>>> master
 import os
 import gobject
 import gtk
