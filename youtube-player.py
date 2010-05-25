@@ -1,9 +1,6 @@
 #!/usr/bin/env python
 import thread
 import math
-import re
-=======
->>>>>>> master
 import os
 import gobject
 import gtk
@@ -43,47 +40,6 @@ def convert_ns(t):
         return "%i:%02i:%02i" %(h,m,s)
 
 
-# <extracted from cream.gui>
-CURVE_SINE = lambda x: math.sin(math.pi / 2 * x)
-FRAMERATE  = 30.0
-class Timeline(gobject.GObject):
-    __gtype_name__ = 'Timeline'
-    __gsignals__ = {
-        'update': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, (gobject.TYPE_FLOAT,)),
-        'completed': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, ())
-    }
-
-    def __init__(self, duration, curve):
-
-        gobject.GObject.__init__(self)
-
-        self.duration = duration
-        self.curve = curve
-
-        self._states = []
-
-
-    def run(self):
-
-        n_frames = (self.duration / 1000.0) * FRAMERATE
-
-        while len(self._states) <= n_frames:
-            self._states.append(self.curve(len(self._states) * (1.0 / n_frames)))
-        self._states.reverse()
-
-        gobject.timeout_add(int(self.duration / FRAMERATE), self.update)
-
-
-    def update(self):
-
-        self.emit('update', self._states.pop())
-        if len(self._states) == 0:
-            self.emit('completed')
-            return False
-        return True
-# </extract>
-
-
 class Slider(gtk.Viewport):
 
     def __init__(self):
@@ -119,7 +75,7 @@ class Slider(gtk.Viewport):
         end_position = widget.get_allocation().x
 
         if start_position != end_position:
-            t = Timeline(500, CURVE_SINE)
+            t = cream.gui.Timeline(500, CURVE_SINE)
             t.connect('update', update)
             t.run()
 
