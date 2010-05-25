@@ -1,5 +1,7 @@
 TODO
 ====
+* Subtitles.
+* Download links.
 * implement a way for the user to request more results (using ``start-index``
   keyword argument to the ``search`` function)
 * seperate title, description, ... in liststore model so they
@@ -8,5 +10,3 @@ TODO
 TOFIX
 =====
 * Starting to play a video while thumbnails are loading does not work
-
-video with lots of subtitles: QRS8MkLhQmM
