@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import thread
 import gtk
@@ -11,16 +12,27 @@ STATE_BUFFERING = 4
 DEFAULT_TEMPFILE_DIR = os.path.join('cream', 'youtube-player')
 
 
+_cleanup_regexes = (
+    (re.compile(r'(?P<amp>&)(?P<X>\w*[^;\w])'), lambda m: '&amp;'+m.group('X')),
+    (re.compile(r'<br/?>'), ''),
+    (re.compile(r'</?a.*?>'), '')
+)
+def cleanup_markup(s):
+    for pattern, replace in _cleanup_regexes:
+        s = pattern.sub(replace, s)
+    return s
+
+
 class Lock(object):
     def __init__(self, for_obj):
-        self.obj = for_obj
+        self.obj_thread_ident = thread.get_ident()
 
     def __enter__(self):
-        if thread.get_ident() != self.obj._main_thread_id:
+        if thread.get_ident() != self.obj_thread_ident:
             gtk.gdk.threads_enter()
 
     def __exit__(self, *exc_stuff_that_nobody_needs):
-        if thread.get_ident() != self.obj._main_thread_id:
+        if thread.get_ident() != self.obj_thread_ident:
             gtk.gdk.threads_leave()
 
 

@@ -2,7 +2,6 @@
 import thread
 import math
 import re
-import re
 import os
 import gobject
 import gtk
@@ -13,7 +12,7 @@ from throbberwidget import Throbber, MODE_SPINNING, MODE_STATIC
 from buffer import Buffer
 
 from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING, STATE_LOADING
-from common import Lock
+from common import Lock, cleanup_markup
 
 
 YOUTUBE_DEVELOPER_KEY = 'AI39si5ABc6YvX1MST8Q7O-uxN7Ra1ly-KKryqH7pc0fb8MrMvvVzvqenE2afoyjQB276fWVx1T3qpDi7FFO6tkVs7JqqTmRRA'
@@ -50,7 +49,7 @@ class Timeline(gobject.GObject):
     __gsignals__ = {
         'update': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, (gobject.TYPE_FLOAT,)),
         'completed': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, ())
-        }
+    }
 
     def __init__(self, duration, curve):
 
@@ -140,8 +139,6 @@ class Slider(gtk.Viewport):
         self.layout.pack_start(widget, True, True, 0)
 
 
-
-
 class YouTubePlayer(object):
     state = STATE_NULL
     fullscreen = False
@@ -150,13 +147,15 @@ class YouTubePlayer(object):
     _current_video_id = None
     _slide_to_info_timeout = None
     _seek_timeout = None
+    _slide_to_info_timeout = None
 
     def __init__(self):
 
-        self._main_thread_id = thread.get_ident()
-        self._slide_to_info_timeout = None
+        self.videos = {}
 
-        self._main_thread_id = thread.get_ident()
+        # Connect to YouTube:
+        self.youtube = youtube.API(YOUTUBE_DEVELOPER_KEY)
+
         self.threadlock = Lock(self)
 
         # Build GTK+ interface:
@@ -181,8 +180,6 @@ class YouTubePlayer(object):
         self.slider.set_size_request(240, 300)
 
         self.sidebar.add(self.slider)
-
-        self.window.connect('destroy', lambda *args: self.quit())
 
         self.fullscreen_window.fullscreen()
         self.fullscreen_video_area.set_app_paintable(True)
@@ -213,9 +210,6 @@ class YouTubePlayer(object):
         self.treeview.connect('row-activated', self.row_activated_cb)
         self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
 
-        # Connect to YouTube:
-        self.youtube = youtube.API(YOUTUBE_DEVELOPER_KEY)
-
         self.buffer = Buffer()
         self.buffer.connect('update', self.buffer_update_cb)
         self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
@@ -236,8 +230,7 @@ class YouTubePlayer(object):
         bus.connect("message", self.on_message)
         bus.connect("sync-message::element", self.on_sync_message)
 
-        self.videos = {}
-
+        self.window.connect('destroy', lambda *args: self.quit())
         self.window.show_all()
 
         gobject.timeout_add(200, self.update_progressbar)
@@ -300,7 +293,7 @@ class YouTubePlayer(object):
 
         if self._slide_to_info_timeout:
             self.remove_slide_to_info_timeout()
-            self._slide_to_info_timeout = gobject.timeout_add(5000, lambda *args: self.slider.slide_to(self.info_box))
+            self._slide_to_info_timeout = gobject.timeout_add_seconds(5, lambda *args: self.slider.slide_to(self.info_box))
 
 
     def back_to_search_button_clicked_cb(self, source):
@@ -308,7 +301,7 @@ class YouTubePlayer(object):
         self.remove_slide_to_info_timeout()
 
         self.slider.slide_to(self.search_box)
-        self._slide_to_info_timeout = gobject.timeout_add(5000, lambda: self.slider.slide_to(self.info_box))
+        self._slide_to_info_timeout = gobject.timeout_add_seconds(5, lambda: self.slider.slide_to(self.info_box))
 
 
     def treeview_size_allocate_cb(self, source, allocation):
@@ -416,6 +409,7 @@ class YouTubePlayer(object):
         elif self.state == STATE_PAUSED:
             self.set_state(STATE_PLAYING)
         else:
+            self.remove_slide_to_info_timeout()
             self.set_state(STATE_PAUSED)
 
 
@@ -438,21 +432,15 @@ class YouTubePlayer(object):
         thread.start_new_thread(self._search, (search_string, sort_by))
 
 
-    def _search(self, search_string, sort_by=youtube.SORT_BY_RELEVANCE):
+    def _search(self, search_string, sort_by, **search_args):
 
-        search_result = self.youtube.search(search_string, sort_by)
-
-        _escape_regex = re.compile(r'(?P<amp>&)(?P<stuff>\w*[^;\w])')
-        def escape_markup(s):
-            def replace_func(match):
-                return '&amp;' + match.group('stuff')
-            return _escape_regex.sub(replace_func, s)
+        search_result = self.youtube.search(search_string, sort_by, **search_args)
 
         for video in search_result:
             self.videos.setdefault(video.video_id, video)
 
-            title = escape_markup(video.title)
-            description = '' if video.description is None else escape_markup(video.description)
+            title = cleanup_markup(video.title)
+            description = '' if video.description is None else cleanup_markup(video.description)
 
             info = "<b>{title}</b>\n{description}\n{duration}".format(
                 title=title,
@@ -461,14 +449,18 @@ class YouTubePlayer(object):
             )
 
             with gtk.gdk.lock:
-                video._tree_iter = self.liststore.append((video.video_id, info, DEFAULT_THUMBNAIL, True))
+                video._tree_iter = self.liststore.append((video.video_id, info, None, True))
 
-        for column, row in enumerate(self.liststore):
-            video = self.videos[row[0]]
-            thumbnail = DEFAULT_THUMBNAIL
+        for row in self.liststore:
+            try:
+                video = self.videos[row[0]]
+            except TypeError:
+                print "row[0]:", row[0]
             if self._request_video_info(video):
                 thumbnail = gtk.gdk.pixbuf_new_from_file(video.download_thumbnail())\
                             .scale_simple(ICON_SIZE, ICON_SIZE, gtk.gdk.INTERP_HYPER)
+            else:
+                thumbnail = DEFAULT_THUMBNAIL
             row[2] = thumbnail
 
 
@@ -476,7 +468,8 @@ class YouTubePlayer(object):
         try:
             video.request_video_info()
             return True
-        except youtube.YouTubeError:
+        except youtube.YouTubeError, exc:
+            self.liststore.set_value(video._tree_iter, 1, cleanup_markup(exc.reason))
             self.liststore.set_value(video._tree_iter, 3, False)
             return False
 
