@@ -7,6 +7,7 @@ import gst
 
 import cream
 import cream.gui
+from cream.gui.widgets.slider import Slider
 from cream.util.string import crop_string
 
 import youtube
@@ -37,71 +38,12 @@ def convert_ns(t):
         return "%i:%02i:%02i" %(h,m,s)
 
 
-class Slider(gtk.Viewport):
-
-    def __init__(self):
-
-        self.active_widget = None
-        self._size_cache = None
-
-        gtk.Viewport.__init__(self)
-        self.set_shadow_type(gtk.SHADOW_NONE)
-
-        self.layout = gtk.HBox(True)
-
-        self.content = gtk.EventBox()
-        self.content.add(self.layout)
-
-        self.container = gtk.Fixed()
-        self.container.add(self.content)
-        self.add(self.container)
-
-        self.connect('size-allocate', self.size_allocate_cb)
-
-
-    def slide_to(self, widget):
-
-        self.active_widget = widget
-
-        def update(source, status):
-            pos = end_position - start_position
-            adjustment.set_value(start_position + int(round(status * pos)))
-
-        adjustment = self.get_hadjustment()
-        start_position = adjustment.get_value()
-        end_position = widget.get_allocation().x
-
-        if start_position != end_position:
-            t = cream.gui.Timeline(500, cream.gui.CURVE_SINE)
-            t.connect('update', update)
-            t.run()
-
-
-    def size_allocate_cb(self, source, allocation):
-
-        if self._size_cache != allocation and self.active_widget:
-            adjustment = self.get_hadjustment()
-            adjustment.set_value(self.active_widget.get_allocation().x)
-
-        self._size_cache = allocation
-
-        width = (len(self.layout.get_children()) or 1) * allocation.width
-        self.content.set_size_request(width, allocation.height)
-
-
-    def append(self, widget):
-
-        self.layout.pack_start(widget, True, True, 0)
-
-
 class YouTubePlayer(cream.Module):
     state = STATE_NULL
     fullscreen = False
 
     _current_video_id = None
-    _slide_to_info_timeout = None
     _seek_timeout = None
-    _slide_to_info_timeout = None
 
     def __init__(self):
 
@@ -130,8 +72,8 @@ class YouTubePlayer(cream.Module):
         self.throbber = Throbber()
 
         self.slider = Slider()
-        self.slider.append(self.search_box)
-        self.slider.append(self.info_box)
+        self.slider.append_widget(self.search_box)
+        self.slider.append_widget(self.info_box)
         self.slider.set_size_request(240, 300)
 
         self.sidebar.add(self.slider)
@@ -158,10 +100,12 @@ class YouTubePlayer(cream.Module):
         self.show_subtitles_btn.connect('toggled', self.subtitles_toggled_cb)
         self.progress_scale.connect('change-value', self.seek_cb)
 
-        self.search_entry.connect('changed', lambda *args: self.extend_slide_to_info_timeout())
-        self.search_entry.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
+        def _reset_timeout(*args):
+            self.slider.try_reset_slide_timeout(self.info_box)
+        self.search_entry.connect('changed', _reset_timeout)
+        self.search_entry.connect('motion-notify-event', _reset_timeout)
 
-        self.treeview.connect('motion-notify-event', lambda *args: self.extend_slide_to_info_timeout())
+        self.treeview.connect('motion-notify-event', _reset_timeout)
         self.treeview.connect('row-activated', self.row_activated_cb)
         self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
 
@@ -237,26 +181,10 @@ class YouTubePlayer(cream.Module):
         self._seek_timeout = gobject.timeout_add(10, lambda *args: self._seek(position_ns))
 
 
-    def remove_slide_to_info_timeout(self):
-
-        if self._slide_to_info_timeout:
-            gobject.source_remove(self._slide_to_info_timeout)
-            self._slide_to_info_timeout = None
-
-
-    def extend_slide_to_info_timeout(self):
-
-        if self._slide_to_info_timeout:
-            self.remove_slide_to_info_timeout()
-            self._slide_to_info_timeout = gobject.timeout_add_seconds(5, lambda *args: self.slider.slide_to(self.info_box))
-
-
     def back_to_search_button_clicked_cb(self, source):
-
-        self.remove_slide_to_info_timeout()
-
         self.slider.slide_to(self.search_box)
-        self._slide_to_info_timeout = gobject.timeout_add_seconds(5, lambda: self.slider.slide_to(self.info_box))
+        self.slider.try_remove_slide_timeout(self.info_box)
+        self.slider.add_slide_timeout(self.info_box, 5)
 
 
     def treeview_size_allocate_cb(self, source, allocation):
@@ -322,8 +250,7 @@ class YouTubePlayer(cream.Module):
 
         search_string = self.search_entry.get_text()
         self.search(search_string)
-
-        self.extend_slide_to_info_timeout()
+        self.slider.try_reset_slide_timeout(self.info_box)
 
 
     def subtitles_toggled_cb(self, *args):
@@ -364,7 +291,7 @@ class YouTubePlayer(cream.Module):
         elif self.state == STATE_PAUSED:
             self.set_state(STATE_PLAYING)
         else:
-            self.remove_slide_to_info_timeout()
+            self.remove_timeout(self.info_box) # stop sliding to the info box
             self.set_state(STATE_PAUSED)
 
 
@@ -558,7 +485,7 @@ class YouTubePlayer(cream.Module):
         type = message.type
 
         if type == gst.MESSAGE_EOS:
-            self.remove_slide_to_info_timeout()
+            self.remove_timeout(self.info_box)
             self.slider.slide_to(self.search_box)
             self.set_state(STATE_NULL)
             self.buffer.flush()
