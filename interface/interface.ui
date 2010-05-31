@@ -163,7 +163,7 @@
       </object>
     </child>
   </object>
-  <object class="GtkListStore" id="liststore">
+  <object class="GtkListStore" id="search_results_liststore">
     <columns>
       <!-- column-name id -->
       <column type="gchararray"/>
@@ -197,17 +197,17 @@
           </packing>
         </child>
         <child>
-          <object class="GtkScrolledWindow" id="scrolledwindow2">
+          <object class="GtkScrolledWindow" id="search_results_scrolled_window">
             <property name="visible">True</property>
             <property name="can_focus">True</property>
             <property name="hscrollbar_policy">automatic</property>
             <property name="shadow_type">in</property>
             <child>
-              <object class="GtkTreeView" id="treeview">
+              <object class="GtkTreeView" id="search_results_treeview">
                 <property name="width_request">240</property>
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
-                <property name="model">liststore</property>
+                <property name="model">search_results_liststore</property>
                 <property name="headers_visible">False</property>
                 <property name="headers_clickable">False</property>
                 <property name="search_column">0</property>
