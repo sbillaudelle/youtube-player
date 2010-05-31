@@ -10,6 +10,7 @@ import cream.gui
 import cream.gui.builder
 import cream.gui.widgets.slider
 import cream.util.string
+from cream.util import cached_property
 
 import youtube
 
@@ -37,6 +38,27 @@ def convert_ns(t):
     else:
         h,m = divmod(m, 60)
         return "%i:%02i:%02i" %(h,m,s)
+
+
+class Video(youtube.Video):
+    @cached_property
+    def buffer(self):
+        return Buffer.for_video(self)
+
+    def _set_state(self, state):
+        pass
+
+    def play(self):
+        pass
+
+    def pause(self):
+        pass
+
+    def toggle_playback(self):
+        pass
+
+    def stop(self):
+        pass
 
 
 class YouTubePlayer(cream.Module):
