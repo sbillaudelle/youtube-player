@@ -43,7 +43,7 @@ class YouTubePlayer(object):
     fullscreen = False
     preferred_resolution = '1080p'
 
-    _current_video = None
+    _current_video_id = None
     _seek_timeout = None
 
     def __init__(self):
@@ -97,6 +97,10 @@ class YouTubePlayer(object):
         self.ui.search_results_treeview.connect('motion-notify-event', _reset_timeout)
         self.ui.search_results_treeview.connect('row-activated', self.row_activated_cb)
         self.ui.search_results_treeview.connect('size-allocate', self.treeview_size_allocate_cb)
+
+        self.buffer = Buffer()
+        self.buffer.connect('update', self.buffer_update_cb)
+        self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
 
         # Initialize GStreamer stuff:
         self.player = gst.Pipeline("player")
@@ -245,7 +249,7 @@ class YouTubePlayer(object):
 
     def subtitles_toggled_cb(self, *args):
 
-        video = self._current_video
+        video = self.videos[self._current_video_id]
         video.request_subtitle_list()
 
         lang_code = 'en' # TODO
@@ -264,26 +268,25 @@ class YouTubePlayer(object):
 
 
     def row_activated_cb(self, source, iter, path):
-        self.load_selected_video()
+
+        selection = self.ui.search_results_treeview.get_selection()
+        model, iter = selection.get_selected()
+        id = model.get_value(iter, 0)
+        thread.start_new_thread(self.load_video, (id,))
 
 
     def play_pause_cb(self, source):
 
         if self.state == STATE_NULL:
-            self.load_selected_video()
+            selection = self.ui.search_results_treeview.get_selection()
+            model, iter = selection.get_selected()
+            id = model.get_value(iter, 0)
+            thread.start_new_thread(self.load_video, (id,))
         elif self.state == STATE_PAUSED:
             self.set_state(STATE_PLAYING)
         else:
             self.ui.slider.remove_slide_timeout(self.ui.info_box) # stop sliding to the info box
             self.set_state(STATE_PAUSED)
-
-    def load_selected_video(self):
-        selection = self.ui.search_results_treeview.get_selection()
-        model, gtk_iter = selection.get_selected()
-        thread.start_new_thread(
-            self.load_video,
-            (self.videos[model.get_value(gtk_iter, 0)],)
-        )
 
 
     def resolution_changed_cb(self, resolution_combobox):
@@ -292,7 +295,7 @@ class YouTubePlayer(object):
             self.preferred_resolution = self.ui.resolutions_store.get_value(gtk_iter, 0)
             # replay the currently played video with the selected quality.
             # TODO: Remember the seek here and re-seek to that point.
-            thread.start_new_thread(self.load_video, (self._current_video,))
+            thread.start_new_thread(self.load_video, (self._current_video_id,))
 
 
     def search(self, search_string):
@@ -322,9 +325,7 @@ class YouTubePlayer(object):
             )
 
             with gtk.gdk.lock:
-                video._tree_iter = self.ui.search_results_liststore.append(
-                    (video.video_id, info, None, True)
-                )
+                video._tree_iter = self.ui.search_results_liststore.append((video.video_id, info, None, True))
 
         for row in self.ui.search_results_liststore:
             try:
@@ -389,9 +390,9 @@ class YouTubePlayer(object):
                 self.ui.play_pause_button.set_sensitive(True)
 
         if state != STATE_NULL:
-            self._current_video._buffer.set_state(STATE_PLAYING)
+            self.buffer.set_state(STATE_PLAYING)
         else:
-            self._current_video._buffer.set_state(STATE_NULL)
+            self.buffer.set_state(STATE_NULL)
 
         if state == STATE_NULL:
             self.player.set_state(gst.STATE_NULL)
@@ -444,13 +445,13 @@ class YouTubePlayer(object):
                     self.ui.throbber.show()
 
 
-    def load_video(self, video, play=True):
+    def load_video(self, id, play=True):
 
         self.ui.slider.slide_to(self.ui.info_box)
 
-        if self._current_video:
-            self.set_state(STATE_NULL)
+        self.set_state(STATE_NULL)
 
+        video = self.videos[id]
         self._request_video_info(video)
 
         self.ui.info_label_title.set_text(video.title or '')
@@ -471,13 +472,10 @@ class YouTubePlayer(object):
                     self.ui.resolution_chooser.set_active_iter(gtk_iter)
 
         video_url = video.stream_urls[resolution]
-        video._buffer = Buffer.for_video(video, video_url, resolution)
-        video._buffer.connect('update', self.buffer_update_cb)
-        video._buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
-        self.playbin.set_property('uri', 'file://%s' % video._buffer.stream_uri.name)
-        video._buffer.set_state(STATE_PLAYING)
-
-        self._current_video = video
+        tmp_video_url = self.buffer.load(video_url)
+        self.playbin.set_property('uri', 'file://{0}'.format(tmp_video_url))
+        self._current_video_id = id
+        self.buffer.set_state(STATE_PLAYING)
 
         if play:
             self.set_state(STATE_LOADING)
@@ -490,7 +488,7 @@ class YouTubePlayer(object):
             self.ui.slider.remove_slide_timeout(self.ui.info_box)
             self.ui.slider.slide_to(self.ui.search_box)
             self.set_state(STATE_NULL)
-            self._current_video._buffer.flush()
+            self.buffer.flush()
 
         elif type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
