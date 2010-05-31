@@ -4,19 +4,18 @@ import gobject
 import gst
 
 from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING
+from common import NamedTempfile
 
 class BufferException(BaseException):
     pass
 
 
 class Buffer(gobject.GObject):
-    # TODO: One buffer for each video -- one buffer file for each video
-
     __gtype_name__ = 'Buffer'
     __gsignals__ = {
         'ready': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, ()),
         'update': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, (gobject.TYPE_FLOAT,))
-        }
+    }
 
     def __init__(self):
 
@@ -77,17 +76,13 @@ class Buffer(gobject.GObject):
 
     def bus_message_cb(self, bus, message):
 
-        t = message.type
-
-        if t == gst.MESSAGE_EOS:
+        if message.type == gst.MESSAGE_EOS:
             self.eos = True
 
 
     def test_bus_message_cb(self, bus, message):
 
-        t = message.type
-
-        if t == gst.MESSAGE_ERROR:
+        if message.type == gst.MESSAGE_ERROR:
             self.test_pipeline.set_state(gst.STATE_NULL)
 
 
@@ -111,17 +106,17 @@ class Buffer(gobject.GObject):
         return True
 
 
-    def load(self, uri):
+    @classmethod
+    def for_video(cls, video, url, resolution_name):
+        instance = cls()
 
-        self.ready = False
+        instance.src.set_property('location', url)
 
-        self.src.set_property('location', uri)
+        instance.stream_uri = NamedTempfile(video.video_id + '-' + resolution_name)
+        instance.sink.set_property('location', instance.stream_uri.name)
+        instance.test_src.set_property('location', instance.stream_uri.name)
 
-        tmp = tempfile.mktemp(dir='/tmp')
-        self.sink.set_property('location', tmp)
-        self.test_src.set_property('location', tmp)
-
-        return tmp
+        return instance
 
 
     def flush(self):

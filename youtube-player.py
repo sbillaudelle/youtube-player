@@ -6,13 +6,14 @@ import gtk
 import gst
 
 import cream.gui
-from cream.gui.widgets.slider import Slider
-from cream.util.string import crop_string
+import cream.gui.builder
+import cream.gui.widgets.slider
+import cream.util.string
 
 import youtube
+
 from throbberwidget import Throbber, MODE_SPINNING, MODE_STATIC
 from buffer import Buffer
-
 from common import STATE_BUFFERING, STATE_NULL, STATE_PAUSED, STATE_PLAYING, STATE_LOADING
 from common import Lock, cleanup_markup
 
@@ -42,7 +43,7 @@ class YouTubePlayer(object):
     fullscreen = False
     preferred_resolution = '1080p'
 
-    _current_video_id = None
+    _current_video = None
     _seek_timeout = None
 
     def __init__(self):
@@ -55,62 +56,47 @@ class YouTubePlayer(object):
         self.threadlock = Lock(self)
 
         # Build GTK+ interface:
-        self.interface = gtk.Builder()
-        self.interface.add_from_file(INTERFACE_FILE)
+        self.ui = cream.gui.builder.GtkBuilderInterface(INTERFACE_FILE)
 
-        for obj in ('window', 'fullscreen_window', 'video_area', 'control_area',
-                    'fullscreen_video_area', 'search_entry', 'play_pause_button',
-                    'play_pause_image', 'resolution_chooser', 'resolutions_store',
-                    'position_display', 'progress', 'liststore', 'treeview',
-                    'cellrenderer_info', 'cellrenderer_thumbnail', 'sort_by_menu',
-                    'sort_by_relevance', 'sort_by_published', 'show_subtitles_btn',
-                    'info_box', 'search_box', 'back_to_search_button', 'sidebar',
-                    'info_label_title', 'info_label_description', 'progress_scale'):
-            setattr(self, obj, self.interface.get_object(obj))
+        self.ui.throbber = Throbber()
 
-        self.throbber = Throbber()
+        self.ui.slider = cream.gui.widgets.slider.Slider()
+        self.ui.slider.append_widget(self.ui.search_box)
+        self.ui.slider.append_widget(self.ui.info_box)
+        self.ui.slider.set_size_request(240, 300)
 
-        self.slider = Slider()
-        self.slider.append_widget(self.search_box)
-        self.slider.append_widget(self.info_box)
-        self.slider.set_size_request(240, 300)
+        self.ui.sidebar.add(self.ui.slider)
 
-        self.sidebar.add(self.slider)
+        self.ui.fullscreen_window.fullscreen()
+        self.ui.fullscreen_video_area.set_app_paintable(True)
+        self.ui.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
+        self.ui.fullscreen_video_area.connect('expose-event', self.expose_cb)
 
-        self.fullscreen_window.fullscreen()
-        self.fullscreen_video_area.set_app_paintable(True)
-        self.fullscreen_video_area.connect('button-press-event', self.video_area_click_cb)
-        self.fullscreen_video_area.connect('expose-event', self.expose_cb)
+        self.ui.video_area.set_app_paintable(True)
+        self.ui.video_area.connect('expose-event', self.expose_cb)
+        self.ui.video_area.connect('button-press-event', self.video_area_click_cb)
 
-        self.video_area.set_app_paintable(True)
-        self.video_area.connect('expose-event', self.expose_cb)
-        self.video_area.connect('button-press-event', self.video_area_click_cb)
+        self.ui.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+        self.ui.play_pause_button.connect('clicked', self.play_pause_cb)
 
-        self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
-        self.play_pause_button.connect('clicked', self.play_pause_cb)
+        self.ui.search_entry.connect('activate', self.search_cb)
+        self.ui.search_entry.connect('icon-release', lambda *args: self.ui.sort_by_menu.popup(None, None, None, 1, 0))
 
-        self.search_entry.connect('activate', self.search_cb)
-        self.search_entry.connect('icon-release', lambda *args: self.sort_by_menu.popup(None, None, None, 1, 0))
-
-        self.resolution_chooser.connect('changed', self.resolution_changed_cb)
-        self.sort_by_menu.connect('selection-done', self.search_cb)
-        self.back_to_search_button.connect('clicked', self.back_to_search_button_clicked_cb)
-        self.info_label_description.connect('size-allocate', lambda source, allocation: source.set_size_request(allocation.width - 2, -1))
-        self.show_subtitles_btn.connect('toggled', self.subtitles_toggled_cb)
-        self.progress_scale.connect('change-value', self.seek_cb)
+        self.ui.resolution_chooser.connect('changed', self.resolution_changed_cb)
+        self.ui.sort_by_menu.connect('selection-done', self.search_cb)
+        self.ui.back_to_search_button.connect('clicked', self.back_to_search_button_clicked_cb)
+        self.ui.info_label_description.connect('size-allocate', lambda source, allocation: source.set_size_request(allocation.width - 2, -1))
+        self.ui.show_subtitles_btn.connect('toggled', self.subtitles_toggled_cb)
+        self.ui.progress_scale.connect('change-value', self.seek_cb)
 
         def _reset_timeout(*args):
-            self.slider.try_reset_slide_timeout(self.info_box)
-        self.search_entry.connect('changed', _reset_timeout)
-        self.search_entry.connect('motion-notify-event', _reset_timeout)
+            self.ui.slider.try_reset_slide_timeout(self.ui.info_box)
+        self.ui.search_entry.connect('changed', _reset_timeout)
+        self.ui.search_entry.connect('motion-notify-event', _reset_timeout)
 
-        self.treeview.connect('motion-notify-event', _reset_timeout)
-        self.treeview.connect('row-activated', self.row_activated_cb)
-        self.treeview.connect('size-allocate', self.treeview_size_allocate_cb)
-
-        self.buffer = Buffer()
-        self.buffer.connect('update', self.buffer_update_cb)
-        self.buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
+        self.ui.search_results_treeview.connect('motion-notify-event', _reset_timeout)
+        self.ui.search_results_treeview.connect('row-activated', self.row_activated_cb)
+        self.ui.search_results_treeview.connect('size-allocate', self.treeview_size_allocate_cb)
 
         # Initialize GStreamer stuff:
         self.player = gst.Pipeline("player")
@@ -128,20 +114,20 @@ class YouTubePlayer(object):
         bus.connect("message", self.on_message)
         bus.connect("sync-message::element", self.on_sync_message)
 
-        self.window.connect('destroy', lambda *args: self.quit())
-        self.window.show_all()
+        self.ui.window.connect('destroy', lambda *args: self.quit())
+        self.ui.window.show_all()
 
         gobject.timeout_add(200, self.update_progressbar)
 
 
     def buffer_update_cb(self, source, position):
 
-        self.progress_scale.set_fill_level(max(0, position - 1))
+        self.ui.progress_scale.set_fill_level(max(0, position - 1))
 
         if position == -1:
-            self.throbber.set_mode(MODE_SPINNING)
+            self.ui.throbber.set_mode(MODE_SPINNING)
         else:
-            self.throbber.set_mode(MODE_STATIC)
+            self.ui.throbber.set_mode(MODE_STATIC)
 
             try:
                 duration = self.playbin.query_duration(gst.FORMAT_TIME, None)[0]
@@ -149,7 +135,7 @@ class YouTubePlayer(object):
                 duration = 0
 
             buffer_length = (position * duration) / 100000000000
-            self.throbber.set_progress(buffer_length / 5.0)
+            self.ui.throbber.set_progress(buffer_length / 5.0)
 
             if buffer_length >= 5 and self.state == STATE_BUFFERING:
                 self.set_state(STATE_PLAYING)
@@ -164,7 +150,7 @@ class YouTubePlayer(object):
 
     def seek_cb(self, source, scroll, value):
 
-        fill_level = self.progress_scale.get_fill_level()
+        fill_level = self.ui.progress_scale.get_fill_level()
 
         position = min(value, fill_level)
 
@@ -181,14 +167,14 @@ class YouTubePlayer(object):
 
 
     def back_to_search_button_clicked_cb(self, source):
-        self.slider.slide_to(self.search_box)
-        self.slider.try_remove_slide_timeout(self.info_box)
-        self.slider.add_slide_timeout(self.info_box, 5)
+        self.ui.slider.slide_to(self.ui.search_box)
+        self.ui.slider.try_remove_slide_timeout(self.ui.info_box)
+        self.ui.slider.add_slide_timeout(self.ui.info_box, 5)
 
 
     def treeview_size_allocate_cb(self, source, allocation):
 
-        self.cellrenderer_info.set_property('width', allocation.width - ICON_SIZE - 8)
+        self.ui.cellrenderer_info.set_property('width', allocation.width - ICON_SIZE - 8)
 
 
     def video_area_click_cb(self, source, event):
@@ -198,17 +184,22 @@ class YouTubePlayer(object):
 
 
     def toggle_fullscreen(self):
+        def set_video_area(area):
+            self.video_sink.set_xwindow_id(area.window.xid)
 
         if not self.fullscreen:
-            self.fullscreen_window.show_all()
-            if self.fullscreen_window.window:
-                self.video_sink.set_xwindow_id(self.fullscreen_video_area.window.xid)
+            # activate fullscreen and continue playback on fullscreen video area.
+            self.ui.fullscreen_window.show_all()
+            if self.ui.fullscreen_window.window:
+                set_video_area(self.ui.fullscreen_video_area)
             else:
-                self.fullscreen_window.connect('map', lambda *args: self.video_sink.set_xwindow_id(self.fullscreen_video_area.window.xid))
+                self.ui.fullscreen_window.connect('map',
+                    lambda *args: set_video_area(self.ui.fullscreen_video_area))
             self.fullscreen = True
         else:
-            self.fullscreen_window.hide()
-            self.video_sink.set_xwindow_id(self.video_area.window.xid)
+            # deactivate fullscreen and continue playback on normal video area.
+            self.ui.fullscreen_window.hide()
+            set_video_area(self.ui.video_area)
             self.fullscreen = False
 
 
@@ -219,9 +210,9 @@ class YouTubePlayer(object):
     def draw(self):
 
         if self.fullscreen:
-            video_area = self.fullscreen_video_area
+            video_area = self.ui.fullscreen_video_area
         else:
-            video_area = self.video_area
+            video_area = self.ui.video_area
 
         width = video_area.get_allocation().width
         height = video_area.get_allocation().height
@@ -247,14 +238,14 @@ class YouTubePlayer(object):
 
     def search_cb(self, source):
 
-        search_string = self.search_entry.get_text()
+        search_string = self.ui.search_entry.get_text()
         self.search(search_string)
-        self.slider.try_reset_slide_timeout(self.info_box)
+        self.ui.slider.try_reset_slide_timeout(self.ui.info_box)
 
 
     def subtitles_toggled_cb(self, *args):
 
-        video = self.videos[self._current_video_id]
+        video = self._current_video
         video.request_subtitle_list()
 
         lang_code = 'en' # TODO
@@ -273,43 +264,44 @@ class YouTubePlayer(object):
 
 
     def row_activated_cb(self, source, iter, path):
-
-        selection = self.treeview.get_selection()
-        model, iter = selection.get_selected()
-        id = model.get_value(iter, 0)
-        thread.start_new_thread(self.load_video, (id,))
+        self.load_selected_video()
 
 
     def play_pause_cb(self, source):
 
         if self.state == STATE_NULL:
-            selection = self.treeview.get_selection()
-            model, iter = selection.get_selected()
-            id = model.get_value(iter, 0)
-            thread.start_new_thread(self.load_video, (id,))
+            self.load_selected_video()
         elif self.state == STATE_PAUSED:
             self.set_state(STATE_PLAYING)
         else:
-            self.remove_timeout(self.info_box) # stop sliding to the info box
+            self.ui.slider.remove_slide_timeout(self.ui.info_box) # stop sliding to the info box
             self.set_state(STATE_PAUSED)
+
+    def load_selected_video(self):
+        selection = self.ui.search_results_treeview.get_selection()
+        model, gtk_iter = selection.get_selected()
+        thread.start_new_thread(
+            self.load_video,
+            (self.videos[model.get_value(gtk_iter, 0)],)
+        )
 
 
     def resolution_changed_cb(self, resolution_combobox):
         if self.state == STATE_PLAYING:
             gtk_iter = resolution_combobox.get_active_iter()
-            self.preferred_resolution = self.resolutions_store.get_value(gtk_iter, 0)
+            self.preferred_resolution = self.ui.resolutions_store.get_value(gtk_iter, 0)
             # replay the currently played video with the selected quality.
             # TODO: Remember the seek here and re-seek to that point.
-            thread.start_new_thread(self.load_video, (self._current_video_id,))
+            thread.start_new_thread(self.load_video, (self._current_video,))
 
 
     def search(self, search_string):
 
         sort_by = youtube.SORT_BY_RELEVANCE
-        if self.sort_by_published.get_active():
+        if self.ui.sort_by_published.get_active():
             sort_by = youtube.SORT_BY_PUBLISHED
 
-        self.liststore.clear()
+        self.ui.search_results_liststore.clear()
         thread.start_new_thread(self._search, (search_string, sort_by))
 
 
@@ -325,14 +317,16 @@ class YouTubePlayer(object):
 
             info = "<b>{title}</b>\n{description}\n{duration}".format(
                 title=title,
-                description=crop_string(description, 100),
+                description=cream.util.string.crop_string(description, 100),
                 duration=convert_ns(int(video.duration) * 1000000000)
             )
 
             with gtk.gdk.lock:
-                video._tree_iter = self.liststore.append((video.video_id, info, None, True))
+                video._tree_iter = self.ui.search_results_liststore.append(
+                    (video.video_id, info, None, True)
+                )
 
-        for row in self.liststore:
+        for row in self.ui.search_results_liststore:
             try:
                 video = self.videos[row[0]]
             except TypeError:
@@ -350,8 +344,8 @@ class YouTubePlayer(object):
             video.request_video_info()
             return True
         except youtube.YouTubeError, exc:
-            self.liststore.set_value(video._tree_iter, 1, cleanup_markup(exc.reason))
-            self.liststore.set_value(video._tree_iter, 3, False)
+            self.ui.search_results_liststore.set_value(video._tree_iter, 1, cleanup_markup(exc.reason))
+            self.ui.search_results_liststore.set_value(video._tree_iter, 3, False)
             return False
 
 
@@ -380,8 +374,8 @@ class YouTubePlayer(object):
         else:
             percentage = 0
 
-        self.position_display.set_text("{0}/{1}".format(position, duration))
-        self.progress.set_value(percentage)
+        self.ui.position_display.set_text("{0}/{1}".format(position, duration))
+        self.ui.progress.set_value(percentage)
 
 
 
@@ -389,15 +383,15 @@ class YouTubePlayer(object):
 
         if state in [STATE_NULL, STATE_PAUSED, STATE_PLAYING]:
             with self.threadlock:
-                if self.control_area.get_child() != self.play_pause_button:
-                    self.control_area.remove(self.throbber)
-                    self.control_area.add(self.play_pause_button)
-                self.play_pause_button.set_sensitive(True)
+                if self.ui.control_area.get_child() != self.ui.play_pause_button:
+                    self.ui.control_area.remove(self.ui.throbber)
+                    self.ui.control_area.add(self.ui.play_pause_button)
+                self.ui.play_pause_button.set_sensitive(True)
 
         if state != STATE_NULL:
-            self.buffer.set_state(STATE_PLAYING)
+            self._current_video._buffer.set_state(STATE_PLAYING)
         else:
-            self.buffer.set_state(STATE_NULL)
+            self._current_video._buffer.set_state(STATE_NULL)
 
         if state == STATE_NULL:
             self.player.set_state(gst.STATE_NULL)
@@ -412,7 +406,7 @@ class YouTubePlayer(object):
             self.state = STATE_PAUSED
 
             with self.threadlock:
-                self.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
+                self.ui.play_pause_image.set_from_icon_name('media-playback-start', gtk.ICON_SIZE_BUTTON)
 
         elif state == STATE_PLAYING:
             self.player.set_state(gst.STATE_PLAYING)
@@ -420,61 +414,70 @@ class YouTubePlayer(object):
 
             with self.threadlock:
                 self.draw()
-                self.play_pause_image.set_from_icon_name('media-playback-pause', gtk.ICON_SIZE_BUTTON)
+                self.ui.play_pause_image.set_from_icon_name('media-playback-pause', gtk.ICON_SIZE_BUTTON)
 
         elif state == STATE_BUFFERING:
             self.player.set_state(gst.STATE_PAUSED)
             self.state = STATE_BUFFERING
 
             with self.threadlock:
-                if self.control_area.get_child() != self.throbber:
-                    self.throbber.set_size_request(self.play_pause_button.get_allocation().width, self.play_pause_button.get_allocation().height)
-                    self.control_area.remove(self.play_pause_button)
-                    self.control_area.add(self.throbber)
-                    self.throbber.show()
+                if self.ui.control_area.get_child() != self.ui.throbber:
+                    self.ui.throbber.set_size_request(
+                        self.ui.play_pause_button.get_allocation().width,
+                        self.ui.play_pause_button.get_allocation().height
+                    )
+                    self.ui.control_area.remove(self.ui.play_pause_button)
+                    self.ui.control_area.add(self.ui.throbber)
+                    self.ui.throbber.show()
 
         elif state == STATE_LOADING:
             self.state = STATE_LOADING
 
             with self.threadlock:
-                if self.control_area.get_child() != self.throbber:
-                    self.throbber.set_size_request(self.play_pause_button.get_allocation().width, self.play_pause_button.get_allocation().height)
-                    self.control_area.remove(self.play_pause_button)
-                    self.control_area.add(self.throbber)
-                    self.throbber.show()
+                if self.ui.control_area.get_child() != self.ui.throbber:
+                    self.ui.throbber.set_size_request(
+                        self.ui.play_pause_button.get_allocation().width,
+                        self.ui.play_pause_button.get_allocation().height
+                    )
+                    self.ui.control_area.remove(self.ui.play_pause_button)
+                    self.ui.control_area.add(self.ui.throbber)
+                    self.ui.throbber.show()
 
 
-    def load_video(self, id, play=True):
+    def load_video(self, video, play=True):
 
-        self.slider.slide_to(self.info_box)
+        self.ui.slider.slide_to(self.ui.info_box)
 
-        self.set_state(STATE_NULL)
+        if self._current_video:
+            self.set_state(STATE_NULL)
 
-        video = self.videos[id]
         self._request_video_info(video)
 
-        self.info_label_title.set_text(video.title or '')
-        self.info_label_description.set_text(video.description or '')
-        self.show_subtitles_btn.set_sensitive(video.has_subtitles)
+        self.ui.info_label_title.set_text(video.title or '')
+        self.ui.info_label_description.set_text(video.description or '')
+        self.ui.show_subtitles_btn.set_sensitive(video.has_subtitles)
 
         resolution = self.preferred_resolution
         if resolution not in video.stream_urls:
             # preferred resolution not available, use the
             # highest possible
             resolution = video.stream_urls.iterkeys().next()
-        self.resolutions_store.clear()
+        self.ui.resolutions_store.clear()
 
         for resolution_name in youtube.RESOLUTIONS.itervalues():
             if resolution_name in video.stream_urls:
-                gtk_iter = self.resolutions_store.append((resolution_name,))
+                gtk_iter = self.ui.resolutions_store.append((resolution_name,))
                 if resolution_name == resolution:
-                    self.resolution_chooser.set_active_iter(gtk_iter)
+                    self.ui.resolution_chooser.set_active_iter(gtk_iter)
 
         video_url = video.stream_urls[resolution]
-        tmp_video_url = self.buffer.load(video_url)
-        self.playbin.set_property('uri', 'file://{0}'.format(tmp_video_url))
-        self._current_video_id = id
-        self.buffer.set_state(STATE_PLAYING)
+        video._buffer = Buffer.for_video(video, video_url, resolution)
+        video._buffer.connect('update', self.buffer_update_cb)
+        video._buffer.connect('ready', lambda *args: self.set_state(STATE_BUFFERING))
+        self.playbin.set_property('uri', 'file://%s' % video._buffer.stream_uri.name)
+        video._buffer.set_state(STATE_PLAYING)
+
+        self._current_video = video
 
         if play:
             self.set_state(STATE_LOADING)
@@ -484,10 +487,10 @@ class YouTubePlayer(object):
         type = message.type
 
         if type == gst.MESSAGE_EOS:
-            self.remove_timeout(self.info_box)
-            self.slider.slide_to(self.search_box)
+            self.ui.slider.remove_slide_timeout(self.ui.info_box)
+            self.ui.slider.slide_to(self.ui.search_box)
             self.set_state(STATE_NULL)
-            self.buffer.flush()
+            self._current_video._buffer.flush()
 
         elif type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
@@ -504,11 +507,11 @@ class YouTubePlayer(object):
 
         if message_name == "prepare-xwindow-id":
             with gtk.gdk.lock:
-                self.video_area.show()
+                self.ui.video_area.show()
 
                 imagesink = message.src
                 imagesink.set_property("force-aspect-ratio", True)
-                imagesink.set_xwindow_id(self.video_area.window.xid)
+                imagesink.set_xwindow_id(self.ui.video_area.window.xid)
 
 
     def main(self):
