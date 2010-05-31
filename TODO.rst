@@ -1,5 +1,6 @@
 TODO
 ====
+* Support for videos shorter than the buffer minimum of 20 seconds
 * Subtitles.
 * Download links.
 * implement a way for the user to request more results (using ``start-index``
